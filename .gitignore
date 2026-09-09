@@ -8,3 +8,5 @@ out/
 .vscode/*
 !.vscode/tasks.json
 *.iml
+logs/
+forge-installer.jar.log
