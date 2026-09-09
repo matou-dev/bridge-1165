@@ -62,3 +62,17 @@ lock is load-bearing (World carries three same-type static RegistryKey
 fields — descriptor alone cannot pick OVERWORLD). The bridge ships FAT
 (spi + example1 embedded — ModLauncher isolates every mods/ jar);
 `mods.toml` carries the version stamp. Last green proof: hub STATE.md.
+
+## Dev client (Prism, NOT a gate)
+
+`tools/run-client.sh` stages a Prism Launcher instance
+(`matou-1165-dev`, MC 1.16.5 / Forge 36.2.42) with a DEV build of the FAT
+bridge plus content, so the proof can be played in a real game. It reuses
+the live pipeline truth (narrow SRG + ASM from a provisioned `E3_DIR` —
+run `tools/run-live.sh` once first) and the same build flags; bytes are
+DEV bytes (dirty tree allowed), the release path stays `BUILD_ONLY`.
+`TELLME_JAR` optionally adds a runtime inspector (`/tellme looking-at`
+for block NBT); unset installs the bridge only. Launch with Prism
+(`--launch "matou-1165-dev"`), create a FLAT world named `matou`, quit,
+then `tools/verify-client-save.sh [world]` replays the E3 verdict
+(world == pure union) on the client save.
