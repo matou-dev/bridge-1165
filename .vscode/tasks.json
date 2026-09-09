@@ -1,0 +1,112 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "matou: check (etages 1+2)",
+            "detail": "Pure + stub gates, no MC jars, never blocking.",
+            "type": "shell",
+            "command": "./tools/check.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "matou: live E3 (LIVE=1, 150s+)",
+            "detail": "Full live proof: provision, build, boot server nogui, world == pure union.",
+            "type": "shell",
+            "command": "LIVE=1 ./tools/check.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "matou: client stage (Prism instance)",
+            "detail": "DEV build + stage matou-1165-dev instance (no launch).",
+            "type": "shell",
+            "command": "./tools/run-client.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "matou: client stage + launch",
+            "detail": "Stage then exec Prism (needs a display, blocks the terminal).",
+            "type": "shell",
+            "command": "LAUNCH=1 ./tools/run-client.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "matou: client verify save",
+            "detail": "Replay E3 verdict on the singleplayer save (quit the game first).",
+            "type": "shell",
+            "command": "./tools/verify-client-save.sh ${input:worldName}",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "matou: release dist (BUILD_ONLY)",
+            "detail": "Versioned server drop; demands strict X.Y.Z and a clean tree.",
+            "type": "shell",
+            "command": "BUILD_ONLY=1 VERSION=${input:version} ./tools/run-live.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "worldName",
+            "type": "promptString",
+            "description": "Singleplayer world name (as created in-game)",
+            "default": "matou"
+        },
+        {
+            "id": "version",
+            "type": "promptString",
+            "description": "Release version (strict X.Y.Z)",
+            "default": "1.2.0"
+        }
+    ]
+}
