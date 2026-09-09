@@ -79,9 +79,21 @@ for block NBT); unset installs the bridge only. `EXTRA_MODS_DIR`
 optionally copies extra dev-comfort jars into `mods/` (e.g. LazyDFU +
 ModernFix + FerriteCore + Embeddium on 1.16.5 — render/RAM/DFU only,
 dev-only, never in `dist/`; pin with a `SHA256SUMS` file inside).
+`PRISM_DIR` must point at an isolated root (e.g.
+`${TMPDIR:-/tmp}/matou-e3-prism`): the live Prism home is refused loudly
+(a launch without `-d` once rewrote `accounts.json`).
 Launch with Prism
-(`--launch "matou-1165-dev"`), create a FLAT world named `matou`, stay near
+(`-d "$PRISM_DIR" --launch "matou-1165-dev" -o "$OFFLINE_NAME"`, offline
+name `MatouDev` by default, deterministic UUID), create a FLAT world named
+`matou`, stay near
 spawn ~4 min without wandering (every tick decides different cells, so
 chunks must stay loaded from tick 0), quit, then
 `tools/verify-client-save.sh [world]` replays the E3 verdict
 (world == pure union) on the client save.
+Automated proof (no keyboard): `AUTOPLAY=1` stages the dev-only autoplay
+companion (`tools/autoplay/` — `want.txt` + `client-pin.txt` +
+`universal-pin.txt`, narrow map derived from the pinned vanilla client
+jar, never shipped) and preseeds a fresh flat world on every run;
+`XVFB=1` plays headless (implies `LAUNCH=1`), `AUTOVERIFY=1` replays the
+verdict on exit and owns the exit status. `AUTOPLAY_WORLD` names the proof
+world (default `matou`).

@@ -1,0 +1,6 @@
+# Pinned vanilla CLIENT jar for the AUTOPLAY derive (DEV only, never the
+# live path): Mojang piston-data object, sha1 from the 1.16.5 version
+# manifest (measured 2026-09-09, same practice as the run-live.sh pins).
+URL=https://piston-data.mojang.com/v1/objects/37fd3c903861eeff3bc24b71eed48f828b5269c8/client.jar
+SHA1=37fd3c903861eeff3bc24b71eed48f828b5269c8
+SIZE=17547153

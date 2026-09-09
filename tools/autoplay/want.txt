@@ -1,0 +1,11 @@
+# E3 autoplay companion WANT: vanilla members the dev-only companion
+# references, one per line (M = method, owner SRG + MCP name + SRG name +
+# descriptor + static 0|1). hub tools/run-client.sh (AUTOPLAY=1) derives
+# the narrow map from the pinned client jar + joined.tsrg + snapshot and
+# pin-checks every line (same practice as the live WANT in
+# tools/run-live.sh). The SRG column is load-bearing, not documentary:
+# notch overloads share descriptors (e.g. loadWorld vs openChatScreen,
+# both (String)V) — descriptor + static alone cannot pick.
+M net/minecraft/client/Minecraft getInstance func_71410_x ()Lnet/minecraft/client/Minecraft; 1
+M net/minecraft/client/Minecraft loadWorld func_238191_a_ (Ljava/lang/String;)V 0
+M net/minecraft/client/Minecraft shutdown func_71400_g ()V 0
