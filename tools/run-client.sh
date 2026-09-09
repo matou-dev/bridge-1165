@@ -207,6 +207,10 @@ cat <<'EOF'
 2. Singleplayer: create NEW world named "matou", game mode Creative, FLAT type.
    The wire lands plane cells at y=63 and hut volumes at y=64..65 around the
    origin (chunks 0..1, rows -1..1) — same 1274-cell stone union as E3.
+   STAY near spawn ~4 min (4000 ticks) without wandering: every tick decides
+   DIFFERENT cells (tick-addressed RNG), so a chunk unloaded mid-run loses
+   its early cells forever — the union only accumulates in continuously
+   loaded chunks. Wandering first, verifying later always undercounts.
 3. Owned check (backend seul): fresh flat world shows the stone hut near
    spawn; nothing else changes. Compat check (additif tardif): open any
    existing vanilla world instead — vanilla builds stay intact, our cells

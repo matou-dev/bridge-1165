@@ -77,6 +77,8 @@ optionally copies extra dev-comfort jars into `mods/` (e.g. LazyDFU +
 ModernFix + FerriteCore + Embeddium on 1.16.5 — render/RAM/DFU only,
 dev-only, never in `dist/`; pin with a `SHA256SUMS` file inside).
 Launch with Prism
-(`--launch "matou-1165-dev"`), create a FLAT world named `matou`, quit,
-then `tools/verify-client-save.sh [world]` replays the E3 verdict
+(`--launch "matou-1165-dev"`), create a FLAT world named `matou`, stay near
+spawn ~4 min without wandering (every tick decides different cells, so
+chunks must stay loaded from tick 0), quit, then
+`tools/verify-client-save.sh [world]` replays the E3 verdict
 (world == pure union) on the client save.
