@@ -73,7 +73,9 @@ normjar() {
   python3 - "$1" "$EPOCH" <<'EOF'
 import sys, zipfile, datetime
 path, epoch = sys.argv[1], int(sys.argv[2])
-dt = datetime.datetime.utcfromtimestamp(epoch).timetuple()[:6]
+# fromtimestamp(tz=utc): same instant as the gate's utcfromtimestamp, minus
+# the host-Python 3.12 DeprecationWarning noise in task output.
+dt = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).timetuple()[:6]
 zin = zipfile.ZipFile(path)
 items = [(i, zin.read(i.filename)) for i in zin.infolist()]
 zin.close()
