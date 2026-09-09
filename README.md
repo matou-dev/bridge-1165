@@ -97,3 +97,8 @@ jar, never shipped) and preseeds a fresh flat world on every run;
 `XVFB=1` plays headless (implies `LAUNCH=1`), `AUTOVERIFY=1` replays the
 verdict on exit and owns the exit status. `AUTOPLAY_WORLD` names the proof
 world (default `matou`).
+Launcher-free variant (no Prism process at all): stage as above, then
+`hub/tools/run-client-direct.sh --bridge <dir>` with the same `PRISM_DIR`
+— the official Forge installer provisions the client runtime once, then
+plain java plays headless. Proven 2026-09-09: world == pure union
+(1274 cells, stone only — same count as the E3 server proof).
