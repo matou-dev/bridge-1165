@@ -68,7 +68,7 @@
             "label": "matou: client verify save",
             "detail": "Replay E3 verdict on the singleplayer save (quit the game first).",
             "type": "shell",
-            "command": "./tools/verify-client-save.sh ${input:worldName}",
+            "command": "./tools/verify-client-save.sh \"${input:worldName}\"",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
