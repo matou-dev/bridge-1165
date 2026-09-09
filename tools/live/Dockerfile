@@ -24,14 +24,16 @@
 # Root-owned `build/` leftovers in an old cache must be cleared once
 # (rm or fresh E3_DIR): run-live.sh refuses to build over them loudly.
 #
-# No machine paths inside the image: Java 8 + python3 + curl + git only
+# No machine paths inside the image: Java 8 + python3 + curl + git +
+# ripgrep only (ripgrep serves the check.sh contamination gates: without it
+# they would pass vacuously — never green by omission).
 # (git serves the release guards: VERSION + clean-tree checks).
 # Pins live in tools/run-live.sh, not here.
 # Repro pin (multi-arch index digest): same tag == same bytes.
 # Refresh deliberately (Docker Hub API), never silently.
 FROM eclipse-temurin:8-jdk-jammy@sha256:0d568cc4232ceb9ed2b5def9647c8f505ff504e8b21e3558e7a89ec59cd9ed0c
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 curl ca-certificates git \
+  && apt-get install -y --no-install-recommends python3 curl ca-certificates git ripgrep \
   && rm -rf /var/lib/apt/lists
 ENV JAVA8_HOME=/opt/java/openjdk
 ARG UID=1000

@@ -9,3 +9,6 @@
   green.
 - E2 content wiring: `ForgeContentCheck` pure E2E (bridge-1122
   pattern), packs from `config/matoubridge/packs.cfg`.
+- E3 live wiring: `tools/run-live.sh` ported (36.2.42 pins, narrow
+  MCP→SRG derive with snapshot name lock, stub pins incl. eventbus,
+  FAT bridge + `mods.toml`, palette anvil probe, world==union verdict).

@@ -44,8 +44,21 @@ from the source files + fake world; `ForgeContent.merge ==
 AdditiveScatterJob.merge` comparator). Body kept in sync with the other
 bridges by convention.
 
-## E3 live proof (TODO)
+## E3 live proof
 
-`tools/run-live.sh` is a scaffold placeholder that fails loudly until the
-live run is ported from bridge-1122 (pins, mapping, server boot,
-world==union verify). See the placeholder header for the port checklist.
+`tools/run-live.sh` (LIVE=1, Java 8): provisions Forge 1.16.5-36.2.42
+(checksum-verified), derives the narrow MCP→SRG map from pinned bytes
+(vanilla server + `joined.tsrg` + MCP snapshot names via `javap`), pins
+every stub member against the provisioned jars (vanilla members against
+the derived SRG, Forge members against universal/eventbus), builds
+versioned jars, reobfuscates the bridge, boots the server 150s
+(`forge-1.16.5-36.2.42.jar nogui`, flat world), then proves
+world == pure union (stone only).
+
+Production naming (measured, not assumed): SRG classes + SRG members at
+runtime (the installer-renamed server jar); `forge/` sources are MCP and
+reobfuscate (Reobf, the ForgeGradle reobf equivalent). The snapshot name
+lock is load-bearing (World carries three same-type static RegistryKey
+fields — descriptor alone cannot pick OVERWORLD). The bridge ships FAT
+(spi + example1 embedded — ModLauncher isolates every mods/ jar);
+`mods.toml` carries the version stamp. Last green proof: hub STATE.md.
