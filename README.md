@@ -67,7 +67,8 @@ fields — descriptor alone cannot pick OVERWORLD). The bridge ships FAT
 
 ## Dev client (Prism, NOT a gate)
 
-`tools/run-client.sh` stages a Prism Launcher instance
+`tools/run-client.sh` (thin wrapper, SSOT `hub/tools/run-client.sh`)
+stages a Prism Launcher instance
 (`matou-1165-dev`, MC 1.16.5 / Forge 36.2.42) with a DEV build of the FAT
 bridge plus content, so the proof can be played in a real game. It reuses
 the live pipeline truth (narrow SRG + ASM from a provisioned `E3_DIR` —
