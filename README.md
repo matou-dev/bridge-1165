@@ -53,7 +53,9 @@ every stub member against the provisioned jars (vanilla members against
 the derived SRG, Forge members against universal/eventbus), builds
 versioned jars, reobfuscates the bridge, boots the server 150s
 (`forge-1.16.5-36.2.42.jar nogui`, flat world), then proves
-world == pure union (stone only).
+world == pure union (stone only). Client re-proof 2026-09-09: the same
+verdict replayed green on a Prism singleplayer save (`run-client.sh`
+instance, flat world, `verify-client-save.sh`: 1274 cells, stone only).
 
 Production naming (measured, not assumed): SRG classes + SRG members at
 runtime (the installer-renamed server jar); `forge/` sources are MCP and
