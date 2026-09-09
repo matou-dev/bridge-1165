@@ -72,7 +72,11 @@ the live pipeline truth (narrow SRG + ASM from a provisioned `E3_DIR` —
 run `tools/run-live.sh` once first) and the same build flags; bytes are
 DEV bytes (dirty tree allowed), the release path stays `BUILD_ONLY`.
 `TELLME_JAR` optionally adds a runtime inspector (`/tellme looking-at`
-for block NBT); unset installs the bridge only. Launch with Prism
+for block NBT); unset installs the bridge only. `EXTRA_MODS_DIR`
+optionally copies extra dev-comfort jars into `mods/` (e.g. LazyDFU +
+ModernFix + FerriteCore + Embeddium on 1.16.5 — render/RAM/DFU only,
+dev-only, never in `dist/`; pin with a `SHA256SUMS` file inside).
+Launch with Prism
 (`--launch "matou-1165-dev"`), create a FLAT world named `matou`, quit,
 then `tools/verify-client-save.sh [world]` replays the E3 verdict
 (world == pure union) on the client save.

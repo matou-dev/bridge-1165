@@ -25,6 +25,16 @@
 #              CurseForge) copied into mods/; TELLME_SHA1 optionally pins it.
 #              Unset = bridge only, plus a printed suggestion. The script
 #              never downloads unknown bytes on your behalf.
+#   EXTRA_MODS_DIR optional dir of extra dev-comfort mod jars (perf inspectors,
+#              e.g. LazyDFU + ModernFix + FerriteCore + Embeddium for 1.16.5,
+#              downloaded once by you from Modrinth/CurseForge). Every *.jar
+#              is copied into mods/; an optional SHA256SUMS file inside is
+#              verified first (same practice as the R2 release drop). Unset =
+#              bridge only. Perf mods stay dev-only: they never ship in dist/
+#              and must never change placed blocks (render/RAM/DFU only) —
+#              a verdict drift after adding one fails loudly in the verifier,
+#              which is the point. The script never downloads mods itself:
+#              unknown bytes are never fetched silently.
 #   LAUNCH=1   actually exec prismlauncher --launch (default prints the
 #              command; launching needs a display and blocks the shell).
 set -eu
@@ -167,6 +177,25 @@ else
   echo "note run-client : no TELLME_JAR (bridge only). Runtime inspector suggestion:"
   echo "  TellMe 1.16.5 (CurseForge) gives /tellme looking-at|holding|batch-run"
   echo "  for NBT/registry dumps; pin its sha1 in TELLME_SHA1 on first download."
+fi
+if [ -n "${EXTRA_MODS_DIR:-}" ]; then
+  [ -d "$EXTRA_MODS_DIR" ] || { echo "FAIL run-client : EXTRA_MODS_DIR=<$EXTRA_MODS_DIR> absent"; exit 1; }
+  if [ -f "$EXTRA_MODS_DIR/SHA256SUMS" ]; then
+    (cd "$EXTRA_MODS_DIR" && sha256sum -c SHA256SUMS) \
+      || { echo "FAIL run-client : extra mods SHA256SUMS mismatch"; exit 1; }
+    echo "ok run-client : extra mods pinned (SHA256SUMS verified)"
+  else
+    echo "note run-client : no SHA256SUMS in <$EXTRA_MODS_DIR> (unverified copy;"
+    echo "  create one with (cd dir && sha256sum *.jar > SHA256SUMS) to pin the bytes)"
+  fi
+  count=$(ls "$EXTRA_MODS_DIR"/*.jar 2>/dev/null | wc -l)
+  [ "$count" -gt 0 ] || { echo "FAIL run-client : no jars in <$EXTRA_MODS_DIR>"; exit 1; }
+  cp "$EXTRA_MODS_DIR"/*.jar "$IDIR/minecraft/mods/"
+  echo "ok run-client : extra mods installed ($count jars)"
+  echo "  perf picks for 1.16.5/36.2.42 live here (dev-only, never in dist/):"
+  echo "  LazyDFU + ModernFix + FerriteCore + Embeddium — render/RAM/DFU only."
+  echo "  If tools/verify-client-save.sh drifts after adding one, the mod"
+  echo "  changed placed blocks: drop it loudly, keep the verdict."
 fi
 echo "ok run-client : instance staged <$IDIR>"
 
