@@ -164,7 +164,15 @@ EOF
 cp "$BLD/jars/matoubridge-reobf.jar" "$IDIR/minecraft/mods/matoubridge.jar"
 rm -rf "$IDIR/minecraft/matou-content" && cp -r ../example1/content "$IDIR/minecraft/matou-content"
 GDIR="$IDIR/minecraft"
-printf 'fr.iamacat.example1.ExamplePack 63 minecraft:stone ownedFile=%s/matou-content/owned.matou scatterFile=%s/matou-content/additive.matou structureFile=%s/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone\n' "$GDIR" "$GDIR" "$GDIR" > "$IDIR/minecraft/config/matoubridge/packs.cfg"
+# packs.cfg: written once, then KEPT. Re-staging must never clobber a dev's
+# alias bindings (e.g. hut_wall=oak_planks for a varied hut) back to the
+# stone proof defaults — that made "whatever happens it's stone".
+if [ -f "$IDIR/minecraft/config/matoubridge/packs.cfg" ]; then
+  echo "note run-client : keeping existing packs.cfg (delete it to reset to stone proof defaults):"
+  grep -v "^#" "$IDIR/minecraft/config/matoubridge/packs.cfg" || true
+else
+  printf 'fr.iamacat.example1.ExamplePack 63 minecraft:stone ownedFile=%s/matou-content/owned.matou scatterFile=%s/matou-content/additive.matou structureFile=%s/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone\n' "$GDIR" "$GDIR" "$GDIR" > "$IDIR/minecraft/config/matoubridge/packs.cfg"
+fi
 if [ -n "${TELLME_JAR:-}" ]; then
   [ -f "$TELLME_JAR" ] || { echo "FAIL run-client : TELLME_JAR=<$TELLME_JAR> absent"; exit 1; }
   if [ -n "${TELLME_SHA1:-}" ]; then
