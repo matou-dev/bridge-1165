@@ -14,12 +14,13 @@ Forge side below. Pure coverage lives in SPI (`BridgeCheck`); content E2E
 
 ## E1 Forge wiring (Forge 36.2.42)
 
-Only `forge/` touches MC/Forge (`World.setBlockState` + `BlockPos` + `IBlockState`,
-overworld y `0..255`):
+Only `forge/` touches MC/Forge (`World.setBlockState` + `BlockPos` + `BlockState`,
+block resolve through `ForgeRegistries.BLOCKS`, overworld y `0..255`):
 
 - `forge/src/fr/iamacat/bridge/forge`: `MatouBridgeMod`
-  (`@Mod(modid="matoubridge")`, FML server tick `END` dim 0 → snapshot
-  `matou:tick` → pure decide), `PackWire` (reflective bind + block
+  (`@Mod("matoubridge")`, constructor registers on `EVENT_BUS`,
+  `WorldTickEvent` `END` + `OVERWORLD` key → snapshot `matou:tick` →
+  pure decide), `PackWire` (reflective bind + block
   resolve + y check, fail fast), `WorldCellSink` (`CellSink` into the
   world, volume cells resolve their block by name, cached, unknown refused
   loudly). Passive until `packs.cfg` exists (Q1 coexistence).

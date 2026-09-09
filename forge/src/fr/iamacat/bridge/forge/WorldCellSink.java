@@ -4,9 +4,11 @@ import fr.iamacat.bridge.CellSink;
 import java.util.HashMap;
 import java.util.Map;
 import net.minecraft.block.Block;
-import net.minecraft.block.state.IBlockState;
+import net.minecraft.block.BlockState;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import net.minecraftforge.registries.ForgeRegistries;
 
 /**
  * E1 live sink: pure decision cells to 1.16.5 world edits. Plane
@@ -60,7 +62,8 @@ public final class WorldCellSink implements CellSink {
         checkY(y);
         Block at = resolved.get(blockName);
         if (at == null) {
-            at = Block.getBlockFromName(blockName);
+            at = ForgeRegistries.BLOCKS.getValue(
+                    new ResourceLocation(blockName));
             if (at == null) {
                 throw new IllegalArgumentException(
                         "E_FORGE_BLOCK:unknown <" + blockName + ">");

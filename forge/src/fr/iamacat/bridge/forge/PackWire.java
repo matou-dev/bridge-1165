@@ -6,7 +6,9 @@ import fr.iamacat.bridge.Packs.PackSpec;
 import fr.iamacat.spi.ConfigurablePack;
 import fr.iamacat.spi.ContentPack;
 import net.minecraft.block.Block;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.World;
+import net.minecraftforge.registries.ForgeRegistries;
 
 /**
  * E1 live binding: one configured pack plus where its cells land. Bound
@@ -41,7 +43,8 @@ public final class PackWire {
                     "E_FORGE_PACKS:args rejected <" + spec.className
                             + "> (pack takes no args)");
         }
-        Block block = Block.getBlockFromName(spec.blockName);
+        Block block = ForgeRegistries.BLOCKS.getValue(
+                new ResourceLocation(spec.blockName));
         if (block == null) {
             throw new IllegalArgumentException("E_FORGE_BLOCK:unknown <"
                     + spec.blockName + ">");

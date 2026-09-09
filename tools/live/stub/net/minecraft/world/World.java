@@ -1,18 +1,25 @@
 package net.minecraft.world;
 
+import net.minecraft.block.BlockState;
+import net.minecraft.util.RegistryKey;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.block.state.IBlockState;
 
 /**
- * C1 compile stub: shape-only 1.12.2 vanilla API used by {@code forge/}
- * sources. Never runs (compile classpath only). Every member is pinned to
- * 14.23.5.2860 by tools/run-live.sh (C3) before compiling — drift fails
+ * E1 compile stub: shape-only 1.16.5 (MCP) vanilla API used by
+ * {@code forge/} sources. Never runs (compile classpath only). Members
+ * {@code OVERWORLD}, {@code getDimensionKey} and {@code setBlockState}
+ * are reobfuscated MCP to SRG at E3 time (see tools/run-live.sh narrow
+ * map) and pinned to the provisioned 1.16.5-36.2.42 jars — drift fails
  * loudly.
  */
 public class World {
-    public WorldProvider provider;
+    public static final RegistryKey<World> OVERWORLD = null;
 
-    public boolean setBlockState(BlockPos pos, IBlockState state) {
+    public RegistryKey<World> getDimensionKey() {
+        return null;
+    }
+
+    public boolean setBlockState(BlockPos pos, BlockState state) {
         return false;
     }
 }
