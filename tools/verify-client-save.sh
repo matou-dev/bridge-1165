@@ -43,14 +43,24 @@ for spec in "r.0.0.mca 0 0" "r.0.0.mca 1 0" "r.0.0.mca 0 1" \
 done
 python3 - "$CLIENT_DIR/union.txt" "$CLIENT_DIR/world.txt" "$PACKS" <<'EOF'
 import sys
-wire_y = None
+# Expected blocks come from packs.cfg itself (wire block + block.* alias
+# bindings), never hardcoded: the E3 proof binds every alias to
+# minecraft:stone, which is why the verdict reads "stone only". Bind an
+# alias to another block for a varied hut in dev — but on a FRESH world:
+# the bridge never replaces, so already-landed stone stays stone.
+wire_y, wire_block, expected = None, None, set()
 for line in open(sys.argv[3]):
     line = line.strip()
     if line and not line.startswith("#"):
-        wire_y = int(line.split()[1])
+        toks = line.split()
+        wire_y, wire_block = int(toks[1]), toks[2]
+        for t in toks[3:]:
+            if t.startswith("block.") and "=" in t:
+                expected.add(t.split("=", 1)[1])
 if wire_y is None:
     print("FAIL verify-client : no wire in packs.cfg")
     sys.exit(1)
+expected.add(wire_block)
 u = set()
 for line in open(sys.argv[1]):
     cell = line.split()[0]
@@ -66,8 +76,9 @@ w = {(int(x), int(y), int(z)): i for x, y, z, i in rows}
 if not w:
     print("FAIL verify-client : world empty at y=63..65 (no tick applied? chunks ungenerated?)")
     sys.exit(1)
-if set(w.values()) != {"minecraft:stone"}:
-    print("FAIL verify-client : foreign blocks %s" % sorted(set(w.values())))
+if set(w.values()) != expected:
+    print("FAIL verify-client : foreign blocks %s (want %s)"
+          % (sorted(set(w.values())), sorted(expected)))
     sys.exit(1)
 if set(w) - u:
     print("FAIL verify-client : world cells outside pure union %s" % sorted(set(w) - u)[:5])
@@ -75,5 +86,6 @@ if set(w) - u:
 if u - set(w):
     print("FAIL verify-client : pure cells missing from world (%d of %d)" % (len(u - set(w)), len(u)))
     sys.exit(1)
-print("ok verify-client : world == pure union (%d cells, stone only)" % len(w))
+print("ok verify-client : world == pure union (%d cells, %s only)"
+      % (len(w), ",".join(sorted(expected))))
 EOF
