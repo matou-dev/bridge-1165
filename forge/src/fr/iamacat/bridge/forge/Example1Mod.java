@@ -253,7 +253,12 @@ public final class Example1Mod {
         String mob = loadMobRef(ownedFile);
         int colon = mob.indexOf(':');
         String shortName = mob.substring(colon + 1);
-        registeredEntity = mob;
+        // Registry id, never the SPI mob ref: this DeferredRegister
+        // builds entry ids as (own modid, name), so the tripwire must
+        // look up <example1:my_beast>, not <example1.content:my_beast>
+        // (the 1.7.10 tripwire is class-keyed and never reads the
+        // string — copying mob verbatim only works there).
+        registeredEntity = MODID + ":" + shortName;
         try {
             BEAST = ENTITIES.register(shortName,
                     () -> EntityType.Builder.create(MatouEntity::new,
