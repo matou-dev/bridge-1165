@@ -15,3 +15,18 @@ mandatory=true
 versionRange="[36,)"
 ordering="NONE"
 side="BOTH"
+# E0 registration: the second mod in this jar (hub decisions/REGISTRATION.md)
+# owns the example1: prefix it registers, so it is declared under its own
+# frozen modid (NAMES.md, never a rename target). Version rides the same
+# @VERSION@ stamp (one token, one bump).
+[[mods]]
+modId="example1"
+version="@VERSION@"
+displayName="MatouExample1"
+description="Example1 content registration for the Matou bridge (generic block, spec-driven)."
+[[dependencies.example1]]
+modId="forge"
+mandatory=true
+versionRange="[36,)"
+ordering="NONE"
+side="BOTH"
