@@ -14,11 +14,16 @@ M net/minecraft/client/Minecraft shutdown func_71400_g ()V 0
 # LivingEntity/getMaxHealth against the mirrored SPAWN_HP, the carrier
 # through ItemEntity/ItemStack getItem against Items.DIAMOND) and kills
 # the first pig past the kill tick through the loot seam (simulated
-# LivingDropsEvent post + remove). Same MCP derive practice as above;
+# LivingDropsEvent post + remove, kill coords + carrier poll through
+# Entity/getPosX/Y/Z — ()D is shared by nine Entity members, the SRG
+# anchor picks the intended three). Same MCP derive practice as above;
 # the dim gate rides World/OVERWORLD + getDimensionKey like the bridge.
 M net/minecraft/entity/Entity getEntityId func_145782_y ()I 0
 F net/minecraft/entity/Entity removed field_70128_L Z 0
 M net/minecraft/entity/Entity remove func_70106_y ()V 0
+M net/minecraft/entity/Entity getPosX func_226277_ct_ ()D 0
+M net/minecraft/entity/Entity getPosY func_226278_cu_ ()D 0
+M net/minecraft/entity/Entity getPosZ func_226281_cx_ ()D 0
 M net/minecraft/world/World getEntitiesWithinAABB func_175647_a (Ljava/lang/Class;Lnet/minecraft/util/math/AxisAlignedBB;Ljava/util/function/Predicate;)Ljava/util/List; 0
 M net/minecraft/entity/LivingEntity getMaxHealth func_110138_aP ()F 0
 M net/minecraft/entity/item/ItemEntity getItem func_92059_d ()Lnet/minecraft/item/ItemStack; 0
