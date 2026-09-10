@@ -168,7 +168,10 @@ echo "ok e3-live : server provisioned (pins verified)"
 #    references (verified by constant-pool scan at E3 time:
 #    getDefaultState, setBlockState, getDimensionKey, OVERWORLD, plus the
 #    registration tranche: getStateId, Properties.create,
-#    hardnessAndResistance, Material.ROCK).
+#    hardnessAndResistance, Material.ROCK, plus the loot tranche:
+#    Entity/world/getPosX/getPosY/getPosZ, World/isRemote,
+#    ServerWorld/addEntity, Items/DIAMOND, Vector3i/getX/getY/getZ,
+#    AbstractBlockState/getBlock).
 #    The snapshot lock is load-bearing, not documentary: World carries
 #    three same-type static RegistryKey fields (OVERWORLD, THE_NETHER,
 #    THE_END), so descriptor + static-ness alone cannot pick OVERWORLD —
@@ -189,6 +192,17 @@ WANT = [
     ("net/minecraft/block/AbstractBlock$Properties", "func_200945_a", "create", "(Lnet/minecraft/block/material/Material;)Lnet/minecraft/block/AbstractBlock$Properties;", "method", True),
     ("net/minecraft/block/AbstractBlock$Properties", "func_200943_b", "hardnessAndResistance", "(F)Lnet/minecraft/block/AbstractBlock$Properties;", "method", False),
     ("net/minecraft/block/material/Material", "field_151576_e", "ROCK", "Lnet/minecraft/block/material/Material;", "field", True),
+    ("net/minecraft/entity/Entity", "field_70170_p", "world", "Lnet/minecraft/world/World;", "field", False),
+    ("net/minecraft/entity/Entity", "func_226277_ct_", "getPosX", "()D", "method", False),
+    ("net/minecraft/entity/Entity", "func_226278_cu_", "getPosY", "()D", "method", False),
+    ("net/minecraft/entity/Entity", "func_226281_cx_", "getPosZ", "()D", "method", False),
+    ("net/minecraft/world/World", "field_72995_K", "isRemote", "Z", "field", False),
+    ("net/minecraft/world/server/ServerWorld", "func_217376_c", "addEntity", "(Lnet/minecraft/entity/Entity;)Z", "method", False),
+    ("net/minecraft/item/Items", "field_151045_i", "DIAMOND", "Lnet/minecraft/item/Item;", "field", True),
+    ("net/minecraft/util/math/vector/Vector3i", "func_177958_n", "getX", "()I", "method", False),
+    ("net/minecraft/util/math/vector/Vector3i", "func_177956_o", "getY", "()I", "method", False),
+    ("net/minecraft/util/math/vector/Vector3i", "func_177952_p", "getZ", "()I", "method", False),
+    ("net/minecraft/block/AbstractBlock$AbstractBlockState", "func_177230_c", "getBlock", "()Lnet/minecraft/block/Block;", "method", False),
 ]
 z = zipfile.ZipFile(snapshot)
 mcpnames = {}
@@ -199,7 +213,7 @@ for row in z.read("fields.csv").decode("utf-8").splitlines()[1:]:
 for owner, srg, mcp, desc, kind, want_static in WANT:
     assert mcpnames.get(srg) == mcp, \
         "E_SRG_DERIVE:snapshot <%s> is <%s>, want <%s>" % (srg, mcpnames.get(srg), mcp)
-print("ok e3-live : snapshot names confirm 8/8")
+print("ok e3-live : snapshot names confirm 19/19")
 srg2obf, classes = {}, {}
 cur = None
 for raw in tsrg.splitlines():
@@ -216,6 +230,18 @@ for raw in tsrg.splitlines():
 def obf_desc(d):
     return re.sub(r"L([^;]+);",
                   lambda m: "L" + srg2obf.get(m.group(1), m.group(1)) + ";", d)
+
+# javap spells primitive field types by name (boolean, ...), never by
+# descriptor char — the loot tranche pins World/isRemote (Z), so the
+# field-type key maps single-char descriptors (object types keep the
+# obf_desc path above; same shape as the 1122 loot tranche).
+PRIM = {"Z": "boolean", "B": "byte", "C": "char", "D": "double",
+        "F": "float", "I": "int", "J": "long", "S": "short"}
+
+def obf_ftype(d):
+    if d in PRIM:
+        return PRIM[d]
+    return obf_desc(d)[1:-1]
 
 def javap_flags(cls):
     # -> {(name, descriptor-or-F:type): is_static} from the notch server jar.
@@ -268,11 +294,11 @@ for row in WANT:
     else:
         tm = [m for m in members if len(m) == 2 and m[1] == srg]
         assert len(tm) == 1, "E_SRG_DERIVE:no tsrg field <%s %s>" % (owner, srg)
-        ftype_obf = obf_desc(desc)[1:-1]
+        ftype_obf = obf_ftype(desc)
         assert flags.get((tm[0][0], "F:" + ftype_obf)) == want_static, \
             "E_SRG_DERIVE:javap mismatch field <%s %s>" % (owner, srg)
         lines.append("FD: %s/%s %s/%s" % (owner, tm[0][1], owner, mcp))
-assert len(lines) == 8, "E_SRG_DERIVE:want 8 lines, got %d" % len(lines)
+assert len(lines) == 19, "E_SRG_DERIVE:want 19 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok e3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -295,8 +321,19 @@ pin_method "net/minecraft/world/World/setBlockState" "(Lnet/minecraft/util/math/
 pin_method "net/minecraft/world/World/getDimensionKey" "()Lnet/minecraft/util/RegistryKey;"
 pin_field "net/minecraft/world/World/OVERWORLD"
 pin_field "net/minecraft/block/material/Material/ROCK"
-[ "$(grep -c . "$SRG_NARROW")" = "8" ] \
-  || { echo "FAIL e3-live : narrow map drift (want 8 lines)"; exit 1; }
+pin_field "net/minecraft/entity/Entity/world"
+pin_method "net/minecraft/entity/Entity/getPosX" "()D"
+pin_method "net/minecraft/entity/Entity/getPosY" "()D"
+pin_method "net/minecraft/entity/Entity/getPosZ" "()D"
+pin_field "net/minecraft/world/World/isRemote"
+pin_method "net/minecraft/world/server/ServerWorld/addEntity" "(Lnet/minecraft/entity/Entity;)Z"
+pin_field "net/minecraft/item/Items/DIAMOND"
+pin_method "net/minecraft/util/math/vector/Vector3i/getX" "()I"
+pin_method "net/minecraft/util/math/vector/Vector3i/getY" "()I"
+pin_method "net/minecraft/util/math/vector/Vector3i/getZ" "()I"
+pin_method "net/minecraft/block/AbstractBlock\$AbstractBlockState/getBlock" "()Lnet/minecraft/block/Block;"
+[ "$(grep -c . "$SRG_NARROW")" = "19" ] \
+  || { echo "FAIL e3-live : narrow map drift (want 19 lines)"; exit 1; }
 echo "ok e3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed Forge member against the provisioned jars. Forge
@@ -325,6 +362,12 @@ pin_uni 'net.minecraftforge.fml.RegistryObject' 'get('
 pin_uni 'net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext' 'get()'
 pin_uni 'net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext' 'getModEventBus('
 pin_uni 'net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent' 'FMLCommonSetupEvent'
+pin_uni 'net.minecraftforge.event.world.BlockEvent' 'getWorld('
+pin_uni 'net.minecraftforge.event.world.BlockEvent' 'getPos('
+pin_uni 'net.minecraftforge.event.world.BlockEvent' 'getState('
+pin_uni 'net.minecraftforge.event.world.BlockEvent$BreakEvent' 'BreakEvent('
+pin_uni 'net.minecraftforge.event.entity.living.LivingEvent' 'getEntityLiving('
+pin_uni 'net.minecraftforge.event.entity.living.LivingDropsEvent' 'LivingDropsEvent('
 # Erased descriptor lock: the real getValue erases V to
 # IForgeRegistryEntry, not Object — an unbounded stub would compile and
 # die live with NoSuchMethodError (found live in E3). Refuse the drift
@@ -348,16 +391,20 @@ echo "ok e3-live : forge stubs pinned to provisioned jars"
 #    commit + same toolchain == same bytes, see normjar), manifests carry
 #    VERSION, the bridge jar embeds mods.toml.
 #    These are the exact bytes the live run proves AND the release ships.
-#    (No java/ stage: the pure seam ships from matou-spi, this repo carries
-#    only its Forge side.)
+#    Bridge-owned pure (java/src: loot store/seal, operator policy) compiles
+#    beside the seam and stages into the forge classes (same shape as
+#    1122/1710: java/ ships inside the bridge jar, never standalone).
 BLD="$E3_DIR/build"
 rm -rf "$BLD" \
   || { echo "FAIL e3-live : cannot clear <$BLD> (root-owned docker leftovers? point E3_DIR at a user-owned dir)"; exit 1; }
-mkdir -p "$BLD/spi" "$BLD/ex1" "$BLD/mini" "$BLD/forge" "$BLD/jars" "$BLD/modstoml/META-INF"
+mkdir -p "$BLD/spi" "$BLD/ex1" "$BLD/mini" "$BLD/forge" "$BLD/jars" "$BLD/modstoml/META-INF" "$BLD/bridge"
 "$J8/javac" -source 8 -target 8 -nowarn -d "$BLD/spi" $(find ../spi/java/src -name '*.java')
 "$J8/javac" -source 8 -target 8 -nowarn -cp "$BLD/spi" -d "$BLD/ex1" $(find ../example1/java/src -name '*.java')
 "$J8/javac" -source 8 -target 8 -nowarn -cp "$BLD/spi" -d "$BLD/mini" $(find ../minimap/java/src -name '*.java')
-"$J8/javac" -source 8 -target 8 -nowarn -cp "$BLD/spi:$BLD/ex1" -d "$BLD/forge" $(find tools/live/stub forge/src -name '*.java')
+"$J8/javac" -source 8 -target 8 -nowarn -cp "$BLD/spi:$BLD/ex1" -d "$BLD/bridge" $(find java/src -name '*.java')
+"$J8/javac" -source 8 -target 8 -nowarn -cp "$BLD/spi:$BLD/ex1:$BLD/bridge" -d "$BLD/forge" $(find tools/live/stub forge/src -name '*.java')
+# Bridge-owned pure stages into the forge classes (ships in the bridge jar).
+cp -r "$BLD/bridge/"* "$BLD/forge/"
 sed "s/@VERSION@/$VERSION/g" forge/src/META-INF/mods.toml > "$BLD/modstoml/META-INF/mods.toml"
 grep -q "version=\"$VERSION\"" "$BLD/modstoml/META-INF/mods.toml" \
   || { echo "FAIL e3-live : mods.toml stamp lost (want version $VERSION)"; exit 1; }
@@ -531,9 +578,9 @@ echo "ok e3-live : server ran ($BOOT_SECS s)"
 #    the rolling server log — Forge splits output across both).
 LOGS="$SERV/boot-e3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|Encountered an unexpected exception" $LOGS; then
+if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|Encountered an unexpected exception" $LOGS; then
   echo "FAIL e3-live : runtime refusal (see $SERV/boot-e3.log)"
-  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|Caused by" $LOGS
+  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|Caused by" $LOGS
   exit 1
 fi
 grep -a -q "matoubridge" $LOGS \

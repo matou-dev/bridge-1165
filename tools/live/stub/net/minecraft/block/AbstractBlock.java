@@ -19,6 +19,20 @@ public abstract class AbstractBlock {
     protected AbstractBlock(Properties properties) {
     }
 
+    /**
+     * Loot declaring holder of {@code getBlock} (measured owner in the
+     * pinned joined.tsrg — {@code func_177230_c} lives on this inner
+     * class, not on {@code BlockState}, so forge reads through this
+     * type and Reobf maps the exact bytecode owner — hub
+     * decisions/LOOT.md owner discipline). Pinned by tools/run-live.sh
+     * (narrow map) — drift fails loudly.
+     */
+    public abstract static class AbstractBlockState {
+        public Block getBlock() {
+            return null;
+        }
+    }
+
     public static class Properties {
         private Properties() {
         }
