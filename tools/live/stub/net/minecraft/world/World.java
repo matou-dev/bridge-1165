@@ -3,6 +3,7 @@ package net.minecraft.world;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.RegistryKey;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 
 /**
@@ -30,5 +31,21 @@ public class World implements IWorld {
 
     public boolean setBlockState(BlockPos pos, BlockState state) {
         return false;
+    }
+
+    /**
+     * Spawn shape (hub decisions/SPAWN.md, T1 vanilla host): the census
+     * poll goes through this ({@code func_175647_a} — there is no
+     * {@code loadedEntityList} field on 1.16.5, the 1.12 field shape
+     * does not port; measured in joined.tsrg + snapshot 20210309 +
+     * javap). Tranche-1 window: one ±512 box over the full height —
+     * the proof world keeps beasts loaded near spawn, wanderers past it
+     * sweep like unloaded ones. Pinned by tools/run-live.sh (narrow
+     * map) — drift fails loudly.
+     */
+    public <T extends Entity> java.util.List<T> getEntitiesWithinAABB(
+            Class<? extends T> clazz, AxisAlignedBB box,
+            java.util.function.Predicate<? super T> filter) {
+        return null;
     }
 }

@@ -9,3 +9,20 @@
 M net/minecraft/client/Minecraft getInstance func_71410_x ()Lnet/minecraft/client/Minecraft; 1
 M net/minecraft/client/Minecraft loadWorld func_238191_a_ (Ljava/lang/String;)V 0
 M net/minecraft/client/Minecraft shutdown func_71400_g ()V 0
+# Spawn proof (SPAWN=1): the companion polls the bridge-landed pigs (the
+# living census through Entity/removed, the landed max health through
+# LivingEntity/getMaxHealth against the mirrored SPAWN_HP, the carrier
+# through ItemEntity/ItemStack getItem against Items.DIAMOND) and kills
+# the first pig past the kill tick through the loot seam (simulated
+# LivingDropsEvent post + remove). Same MCP derive practice as above;
+# the dim gate rides World/OVERWORLD + getDimensionKey like the bridge.
+M net/minecraft/entity/Entity getEntityId func_145782_y ()I 0
+F net/minecraft/entity/Entity removed field_70128_L Z 0
+M net/minecraft/entity/Entity remove func_70106_y ()V 0
+M net/minecraft/world/World getEntitiesWithinAABB func_175647_a (Ljava/lang/Class;Lnet/minecraft/util/math/AxisAlignedBB;Ljava/util/function/Predicate;)Ljava/util/List; 0
+M net/minecraft/entity/LivingEntity getMaxHealth func_110138_aP ()F 0
+M net/minecraft/entity/item/ItemEntity getItem func_92059_d ()Lnet/minecraft/item/ItemStack; 0
+M net/minecraft/item/ItemStack getItem func_77973_b ()Lnet/minecraft/item/Item; 0
+F net/minecraft/item/Items DIAMOND field_151045_i Lnet/minecraft/item/Item; 1
+M net/minecraft/world/World getDimensionKey func_234923_W_ ()Lnet/minecraft/util/RegistryKey; 0
+F net/minecraft/world/World OVERWORLD field_234918_g_ Lnet/minecraft/util/RegistryKey; 1

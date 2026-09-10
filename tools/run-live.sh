@@ -171,7 +171,12 @@ echo "ok e3-live : server provisioned (pins verified)"
 #    hardnessAndResistance, Material.ROCK, plus the loot tranche:
 #    Entity/world/getPosX/getPosY/getPosZ, World/isRemote,
 #    ServerWorld/addEntity, Items/DIAMOND, Vector3i/getX/getY/getZ,
-#    AbstractBlockState/getBlock).
+#    AbstractBlockState/getBlock, plus the spawn tranche:
+#    Entity/getEntityId/removed/setPositionAndRotation,
+#    World/getEntitiesWithinAABB,
+#    LivingEntity/getAttribute/getMaxHealth/setHealth,
+#    ModifiableAttributeInstance/setBaseValue, Attributes/MAX_HEALTH,
+#    EntityType/PIG).
 #    The snapshot lock is load-bearing, not documentary: World carries
 #    three same-type static RegistryKey fields (OVERWORLD, THE_NETHER,
 #    THE_END), so descriptor + static-ness alone cannot pick OVERWORLD —
@@ -203,6 +208,16 @@ WANT = [
     ("net/minecraft/util/math/vector/Vector3i", "func_177956_o", "getY", "()I", "method", False),
     ("net/minecraft/util/math/vector/Vector3i", "func_177952_p", "getZ", "()I", "method", False),
     ("net/minecraft/block/AbstractBlock$AbstractBlockState", "func_177230_c", "getBlock", "()Lnet/minecraft/block/Block;", "method", False),
+    ("net/minecraft/entity/Entity", "func_145782_y", "getEntityId", "()I", "method", False),
+    ("net/minecraft/entity/Entity", "field_70128_L", "removed", "Z", "field", False),
+    ("net/minecraft/entity/Entity", "func_70080_a", "setPositionAndRotation", "(DDDFF)V", "method", False),
+    ("net/minecraft/world/World", "func_175647_a", "getEntitiesWithinAABB", "(Ljava/lang/Class;Lnet/minecraft/util/math/AxisAlignedBB;Ljava/util/function/Predicate;)Ljava/util/List;", "method", False),
+    ("net/minecraft/entity/LivingEntity", "func_110148_a", "getAttribute", "(Lnet/minecraft/entity/ai/attributes/Attribute;)Lnet/minecraft/entity/ai/attributes/ModifiableAttributeInstance;", "method", False),
+    ("net/minecraft/entity/LivingEntity", "func_110138_aP", "getMaxHealth", "()F", "method", False),
+    ("net/minecraft/entity/LivingEntity", "func_70606_j", "setHealth", "(F)V", "method", False),
+    ("net/minecraft/entity/ai/attributes/ModifiableAttributeInstance", "func_111128_a", "setBaseValue", "(D)V", "method", False),
+    ("net/minecraft/entity/ai/attributes/Attributes", "field_233818_a_", "MAX_HEALTH", "Lnet/minecraft/entity/ai/attributes/Attribute;", "field", True),
+    ("net/minecraft/entity/EntityType", "field_200784_X", "PIG", "Lnet/minecraft/entity/EntityType;", "field", True),
 ]
 z = zipfile.ZipFile(snapshot)
 mcpnames = {}
@@ -213,7 +228,7 @@ for row in z.read("fields.csv").decode("utf-8").splitlines()[1:]:
 for owner, srg, mcp, desc, kind, want_static in WANT:
     assert mcpnames.get(srg) == mcp, \
         "E_SRG_DERIVE:snapshot <%s> is <%s>, want <%s>" % (srg, mcpnames.get(srg), mcp)
-print("ok e3-live : snapshot names confirm 19/19")
+print("ok e3-live : snapshot names confirm 29/29")
 srg2obf, classes = {}, {}
 cur = None
 for raw in tsrg.splitlines():
@@ -298,7 +313,7 @@ for row in WANT:
         assert flags.get((tm[0][0], "F:" + ftype_obf)) == want_static, \
             "E_SRG_DERIVE:javap mismatch field <%s %s>" % (owner, srg)
         lines.append("FD: %s/%s %s/%s" % (owner, tm[0][1], owner, mcp))
-assert len(lines) == 19, "E_SRG_DERIVE:want 19 lines, got %d" % len(lines)
+assert len(lines) == 29, "E_SRG_DERIVE:want 29 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok e3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -332,8 +347,18 @@ pin_method "net/minecraft/util/math/vector/Vector3i/getX" "()I"
 pin_method "net/minecraft/util/math/vector/Vector3i/getY" "()I"
 pin_method "net/minecraft/util/math/vector/Vector3i/getZ" "()I"
 pin_method "net/minecraft/block/AbstractBlock\$AbstractBlockState/getBlock" "()Lnet/minecraft/block/Block;"
-[ "$(grep -c . "$SRG_NARROW")" = "19" ] \
-  || { echo "FAIL e3-live : narrow map drift (want 19 lines)"; exit 1; }
+pin_method "net/minecraft/entity/Entity/getEntityId" "()I"
+pin_field "net/minecraft/entity/Entity/removed"
+pin_method "net/minecraft/entity/Entity/setPositionAndRotation" "(DDDFF)V"
+pin_method "net/minecraft/world/World/getEntitiesWithinAABB" "(Ljava/lang/Class;Lnet/minecraft/util/math/AxisAlignedBB;Ljava/util/function/Predicate;)Ljava/util/List;"
+pin_method "net/minecraft/entity/LivingEntity/getAttribute" "(Lnet/minecraft/entity/ai/attributes/Attribute;)Lnet/minecraft/entity/ai/attributes/ModifiableAttributeInstance;"
+pin_method "net/minecraft/entity/LivingEntity/getMaxHealth" "()F"
+pin_method "net/minecraft/entity/LivingEntity/setHealth" "(F)V"
+pin_method "net/minecraft/entity/ai/attributes/ModifiableAttributeInstance/setBaseValue" "(D)V"
+pin_field "net/minecraft/entity/ai/attributes/Attributes/MAX_HEALTH"
+pin_field "net/minecraft/entity/EntityType/PIG"
+[ "$(grep -c . "$SRG_NARROW")" = "29" ] \
+  || { echo "FAIL e3-live : narrow map drift (want 29 lines)"; exit 1; }
 echo "ok e3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed Forge member against the provisioned jars. Forge
@@ -368,6 +393,9 @@ pin_uni 'net.minecraftforge.event.world.BlockEvent' 'getState('
 pin_uni 'net.minecraftforge.event.world.BlockEvent$BreakEvent' 'BreakEvent('
 pin_uni 'net.minecraftforge.event.entity.living.LivingEvent' 'getEntityLiving('
 pin_uni 'net.minecraftforge.event.entity.living.LivingDropsEvent' 'LivingDropsEvent('
+pin_uni 'net.minecraftforge.event.entity.EntityJoinWorldEvent' 'EntityJoinWorldEvent('
+pin_uni 'net.minecraftforge.event.entity.EntityJoinWorldEvent' 'getWorld('
+pin_uni 'net.minecraftforge.event.entity.EntityEvent' 'getEntity('
 # Erased descriptor lock: the real getValue erases V to
 # IForgeRegistryEntry, not Object — an unbounded stub would compile and
 # die live with NoSuchMethodError (found live in E3). Refuse the drift
@@ -380,8 +408,10 @@ pin_eb() {
     || { echo "FAIL e3-live : eventbus pin unmet <$1 :: $2>"; exit 1; }
 }
 pin_eb 'net.minecraftforge.eventbus.api.Event' 'Event'
+pin_eb 'net.minecraftforge.eventbus.api.Event' 'setCanceled('
 pin_eb 'net.minecraftforge.eventbus.api.IEventBus' 'register('
 pin_eb 'net.minecraftforge.eventbus.api.IEventBus' 'addListener('
+pin_eb 'net.minecraftforge.eventbus.api.IEventBus' 'post('
 pin_eb 'net.minecraftforge.eventbus.api.SubscribeEvent' 'SubscribeEvent'
 echo "ok e3-live : forge stubs pinned to provisioned jars"
 
@@ -578,9 +608,9 @@ echo "ok e3-live : server ran ($BOOT_SECS s)"
 #    the rolling server log — Forge splits output across both).
 LOGS="$SERV/boot-e3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|Encountered an unexpected exception" $LOGS; then
+if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|Encountered an unexpected exception" $LOGS; then
   echo "FAIL e3-live : runtime refusal (see $SERV/boot-e3.log)"
-  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|Caused by" $LOGS
+  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|Caused by" $LOGS
   exit 1
 fi
 grep -a -q "matoubridge" $LOGS \

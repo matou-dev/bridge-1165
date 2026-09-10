@@ -6,3 +6,11 @@ net.minecraftforge.event.TickEvent$ClientTickEvent .
 net.minecraftforge.event.TickEvent$Phase END
 net.minecraftforge.common.MinecraftForge EVENT_BUS
 net.minecraftforge.fml.common.Mod value
+# Spawn proof (SPAWN=1): server-world ticks (side + dim scope rides the
+# event world like the bridge), the simulated kill ctor, and the bus post
+# (eventbus jar, not the universal: unstaged here, proven live -- same
+# split as the bridge IEventBus.post pin in tools/run-live.sh).
+net.minecraftforge.event.TickEvent$WorldTickEvent world
+net.minecraftforge.event.TickEvent side
+net.minecraftforge.event.TickEvent phase
+net.minecraftforge.event.entity.living.LivingDropsEvent LivingDropsEvent(
