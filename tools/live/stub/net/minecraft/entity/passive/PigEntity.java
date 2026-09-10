@@ -2,6 +2,7 @@ package net.minecraft.entity.passive;
 
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.ai.attributes.AttributeModifierMap;
 import net.minecraft.world.World;
 
 /**
@@ -16,5 +17,17 @@ import net.minecraft.world.World;
  */
 public class PigEntity extends LivingEntity {
     public PigEntity(EntityType<? extends PigEntity> type, World world) {
+    }
+
+    /**
+     * Vanilla pig attribute builder (measured via javap on the pinned
+     * 36.2.42 SRG server jar: static, zero-arg, returns the mutable map
+     * the beast reuses wholesale). Ships with no MCP name in snapshot
+     * 20210309, so forge sources call it SRG-direct — passthrough, no
+     * narrow row (same rule as the MCP-named
+     * {@code EntityClassification} constants).
+     */
+    public static AttributeModifierMap.MutableAttribute func_234215_eI_() {
+        return null;
     }
 }

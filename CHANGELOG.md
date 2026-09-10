@@ -21,6 +21,17 @@ Full notes per tag: https://github.com/matou-dev/bridge-1165/releases.
   and the companion legs narrowed to the beast; companion loads AFTER
   `matoubridge` in autoplay-mods.toml (lead-measured, unproven on
   36.2.42 until live). Live proof TODO.
+- Custom entity live fixes (hub `decisions/SPAWN.md`, both caught loud
+  on the first two direct-client runs, never silent): the setup
+  tripwire looks up the registry id (`example1:my_beast` from this
+  `DeferredRegister`'s own modid, never the SPI mob ref
+  `example1.content:my_beast` — the 1.7.10 tripwire is class-keyed and
+  never reads the string) ; the beast's attribute map registers on the
+  mod-bus `EntityAttributeCreationEvent` (vanilla pig map reused
+  wholesale — the vanilla `LivingEntity` ctor NPEs on the first landing
+  without one ; pig builder `func_234215_eI_` ships with no MCP name in
+  snapshot 20210309 so it stays SRG-direct, passthrough, while the
+  finishing `create` rides the narrow map 33->34).
 
 ## [1.2.0] - 2026-09-09
 

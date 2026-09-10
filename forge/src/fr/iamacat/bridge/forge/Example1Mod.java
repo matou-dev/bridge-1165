@@ -14,9 +14,11 @@ import net.minecraft.block.Block;
 import net.minecraft.client.renderer.entity.PigRenderer;
 import net.minecraft.entity.EntityClassification;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.passive.PigEntity;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraftforge.event.entity.EntityAttributeCreationEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.fml.RegistryObject;
@@ -112,6 +114,8 @@ public final class Example1Mod {
         BLOCKS.register(bus);
         ENTITIES.register(bus);
         bus.addListener((FMLCommonSetupEvent event) -> verifyRegistered());
+        bus.addListener((EntityAttributeCreationEvent event) ->
+                registerBeastAttributes(event));
     }
 
     /**
@@ -148,6 +152,23 @@ public final class Example1Mod {
             DistExecutor.runWhenOn(Dist.CLIENT,
                     () -> Example1Mod::registerBeastRenderer);
         }
+    }
+
+    /**
+     * Beast attribute map: fresh entity types carry none, and the
+     * vanilla {@code LivingEntity} ctor NPEs without one (measured live
+     * on the first landing — the tripwire never fires, the tick loop
+     * dies). The beast reuses the vanilla pig map wholesale
+     * (pig-identical, never hand-copied values). Null beast (no wired
+     * owned file) stays passive — there is no type to arm, same Q1
+     * rule as the missing packs.cfg.
+     */
+    private static void registerBeastAttributes(
+            EntityAttributeCreationEvent event) {
+        if (BEAST == null) {
+            return;
+        }
+        event.put(BEAST.get(), PigEntity.func_234215_eI_().create());
     }
 
     private static void queueCustom(Packs.PackSpec spec) {

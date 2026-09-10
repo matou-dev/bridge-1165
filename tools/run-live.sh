@@ -231,6 +231,7 @@ WANT = [
     ("net/minecraft/entity/EntityType$Builder", "func_220321_a", "size", "(FF)Lnet/minecraft/entity/EntityType$Builder;", "method", False),
     ("net/minecraft/entity/EntityType$Builder", "func_233606_a_", "trackingRange", "(I)Lnet/minecraft/entity/EntityType$Builder;", "method", False),
     ("net/minecraft/entity/EntityType$Builder", "func_206830_a", "build", "(Ljava/lang/String;)Lnet/minecraft/entity/EntityType;", "method", False),
+    ("net/minecraft/entity/ai/attributes/AttributeModifierMap$MutableAttribute", "func_233813_a_", "create", "()Lnet/minecraft/entity/ai/attributes/AttributeModifierMap;", "method", False),
 ]
 z = zipfile.ZipFile(snapshot)
 mcpnames = {}
@@ -241,7 +242,7 @@ for row in z.read("fields.csv").decode("utf-8").splitlines()[1:]:
 for owner, srg, mcp, desc, kind, want_static in WANT:
     assert mcpnames.get(srg) == mcp, \
         "E_SRG_DERIVE:snapshot <%s> is <%s>, want <%s>" % (srg, mcpnames.get(srg), mcp)
-print("ok e3-live : snapshot names confirm 33/33")
+print("ok e3-live : snapshot names confirm 34/34")
 srg2obf, classes = {}, {}
 cur = None
 for raw in tsrg.splitlines():
@@ -326,7 +327,7 @@ for row in WANT:
         assert flags.get((tm[0][0], "F:" + ftype_obf)) == want_static, \
             "E_SRG_DERIVE:javap mismatch field <%s %s>" % (owner, srg)
         lines.append("FD: %s/%s %s/%s" % (owner, tm[0][1], owner, mcp))
-assert len(lines) == 33, "E_SRG_DERIVE:want 33 lines, got %d" % len(lines)
+assert len(lines) == 34, "E_SRG_DERIVE:want 34 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok e3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -374,8 +375,9 @@ pin_method "net/minecraft/entity/EntityType\$Builder/create" "(Lnet/minecraft/en
 pin_method "net/minecraft/entity/EntityType\$Builder/size" "(FF)Lnet/minecraft/entity/EntityType\$Builder;"
 pin_method "net/minecraft/entity/EntityType\$Builder/trackingRange" "(I)Lnet/minecraft/entity/EntityType\$Builder;"
 pin_method "net/minecraft/entity/EntityType\$Builder/build" "(Ljava/lang/String;)Lnet/minecraft/entity/EntityType;"
-[ "$(grep -c . "$SRG_NARROW")" = "33" ] \
-  || { echo "FAIL e3-live : narrow map drift (want 33 lines)"; exit 1; }
+pin_method "net/minecraft/entity/ai/attributes/AttributeModifierMap\$MutableAttribute/create" "()Lnet/minecraft/entity/ai/attributes/AttributeModifierMap;"
+[ "$(grep -c . "$SRG_NARROW")" = "34" ] \
+  || { echo "FAIL e3-live : narrow map drift (want 34 lines)"; exit 1; }
 echo "ok e3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed Forge member against the provisioned jars. Forge
@@ -412,6 +414,7 @@ pin_uni 'net.minecraftforge.event.entity.living.LivingEvent' 'getEntityLiving('
 pin_uni 'net.minecraftforge.event.entity.living.LivingDropsEvent' 'LivingDropsEvent('
 pin_uni 'net.minecraftforge.event.entity.EntityJoinWorldEvent' 'EntityJoinWorldEvent('
 pin_uni 'net.minecraftforge.event.entity.EntityJoinWorldEvent' 'getWorld('
+pin_uni 'net.minecraftforge.event.entity.EntityAttributeCreationEvent' 'put('
 pin_uni 'net.minecraftforge.event.entity.EntityEvent' 'getEntity('
 # Custom entity tranche (hub decisions/SPAWN.md): the generic beast
 # queues through DeferredRegister on ForgeRegistries.ENTITIES (same
