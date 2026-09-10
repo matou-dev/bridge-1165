@@ -2,11 +2,12 @@
 # Gate bridge-1165 : anti-contamination + contenu-wire + forge isole 1.16.5.
 # Etage 1 (toujours vert, sans MC) : siblings ../spi + ../example1 presents
 # + compile + E2E pur E2 (ForgeContentCheck : packs issus des vrais .matou,
-# monde fake enregistreur) + loot spike-loot (LootCheck :
-# DropStore/LootSeal/OperatorPolicy contre LootJob/LootTable, pattern
-# 1710/1122). Le seam fr.iamacat.bridge vient de matou-spi, couvert par
-# BridgeCheck cote SPI ; le pur bridge-owned (loot, wire) vit dans
-# java/src (zero-MC). Etage 2 (Forge 36.2.42) : compile forge/ contre
+# monde fake enregistreur) + repop spike-repop (RepopCheck :
+# MinedStore/RepopSeal contre RepopJob, pattern 1710) + loot spike-loot
+# (LootCheck : DropStore/LootSeal/OperatorPolicy contre
+# LootJob/LootTable, pattern 1710/1122). Le seam fr.iamacat.bridge vient
+# de matou-spi, couvert par BridgeCheck cote SPI ; le pur bridge-owned
+# (spike, loot, wire) vit dans java/src (zero-MC). Etage 2 (Forge 36.2.42) : compile forge/ contre
 # tools/live/stub (shape-only, jamais execute) — vert sans MC_JAR.
 # Etage 2 (Forge 36.2.42) : compile forge/ contre tools/live/stub
 # (shape-only, jamais execute) — vert sans MC_JAR. Etage 3 (live, E3) :
@@ -79,6 +80,7 @@ javac --release 8 -d build/sib $(find "$SPI" "$EX1" java/src -name '*.java')
 echo "ok (sib-spi-ex1-bridge)"
 javac --release 8 -cp build/sib -d build/sib $(find java/test -name '*.java')
 java -cp build/sib fr.iamacat.bridge.ForgeContentCheck
+java -cp build/sib fr.iamacat.bridge.spike.RepopCheck
 java -cp build/sib fr.iamacat.bridge.loot.LootCheck
 java -cp build/sib fr.iamacat.bridge.spawn.SpawnCheck
 # Etage 2 : forge/ seul touche MC/Forge (1.16.5). Stub shape-only, pas de
