@@ -19,6 +19,7 @@ M net/minecraft/client/Minecraft shutdown func_71400_g ()V 0
 # anchor picks the intended three). Same MCP derive practice as above;
 # the dim gate rides World/OVERWORLD + getDimensionKey like the bridge.
 M net/minecraft/entity/Entity getEntityId func_145782_y ()I 0
+M net/minecraft/entity/Entity setPositionAndRotation func_70080_a (DDDFF)V 0
 F net/minecraft/entity/Entity removed field_70128_L Z 0
 M net/minecraft/entity/Entity remove func_70106_y ()V 0
 M net/minecraft/entity/Entity getPosX func_226277_ct_ ()D 0
@@ -31,3 +32,23 @@ M net/minecraft/item/ItemStack getItem func_77973_b ()Lnet/minecraft/item/Item; 
 F net/minecraft/item/Items DIAMOND field_151045_i Lnet/minecraft/item/Item; 1
 M net/minecraft/world/World getDimensionKey func_234923_W_ ()Lnet/minecraft/util/RegistryKey; 0
 F net/minecraft/world/World OVERWORLD field_234918_g_ Lnet/minecraft/util/RegistryKey; 1
+# Loot proof (LOOT=1): the companion harvests the registered ore at
+# (8,10,8) (place + clear + BreakEvent post authored by the joined
+# player) and kills a spawned vanilla pig at (12,10,8) (simulated
+# LivingDropsEvent post), then polls both spots for the diamond carrier.
+# 1.16.5 native spelling (measured in joined.tsrg + snapshot 20210309,
+# proven at live time): the ore resolves through ForgeRegistries (no
+# WANT — Forge is never obfuscated), the state through
+# Block/getDefaultState, air probes through World/getBlockState +
+# BlockStateBase/isAir, place through World/setBlockState, clear through
+# World/removeBlock, the player through ServerWorld/getPlayers (no
+# playerEntities field ships on 1.16.5), the victim through
+# EntityType/PIG + ServerWorld/addEntity (the loot sink).
+M net/minecraft/block/Block getDefaultState func_176223_P ()Lnet/minecraft/block/BlockState; 0
+M net/minecraft/world/World getBlockState func_180495_p (Lnet/minecraft/util/math/BlockPos;)Lnet/minecraft/block/BlockState; 0
+M net/minecraft/world/World setBlockState func_175656_a (Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;)Z 0
+M net/minecraft/world/World removeBlock func_217377_a (Lnet/minecraft/util/math/BlockPos;Z)Z 0
+M net/minecraft/block/AbstractBlock$AbstractBlockState isAir func_196958_f ()Z 0
+M net/minecraft/world/server/ServerWorld getPlayers func_217369_A ()Ljava/util/List; 0
+M net/minecraft/world/server/ServerWorld addEntity func_217376_c (Lnet/minecraft/entity/Entity;)Z 0
+F net/minecraft/entity/EntityType PIG field_200784_X Lnet/minecraft/entity/EntityType; 1

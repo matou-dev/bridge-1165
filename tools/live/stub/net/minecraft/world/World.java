@@ -34,6 +34,24 @@ public class World implements IWorld {
     }
 
     /**
+     * Loot companion probes (hub decisions/LOOT.md loot port tranche):
+     * {@code getBlockState} reads the cell before place and after
+     * place/clear, {@code removeBlock} clears it (measured in the pinned
+     * joined.tsrg + snapshot 20210309 — {@code getBlockState} is
+     * {@code func_180495_p}, {@code removeBlock} is
+     * {@code func_217377_a}; the 1.12 {@code setBlockToAir} shape does
+     * not port). Pinned by tools/autoplay/want.txt at staging time —
+     * drift fails loudly.
+     */
+    public BlockState getBlockState(BlockPos pos) {
+        return null;
+    }
+
+    public boolean removeBlock(BlockPos pos, boolean drop) {
+        return false;
+    }
+
+    /**
      * Spawn shape (hub decisions/SPAWN.md, T1 vanilla host): the census
      * poll goes through this ({@code func_175647_a} — there is no
      * {@code loadedEntityList} field on 1.16.5, the 1.12 field shape

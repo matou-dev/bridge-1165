@@ -2,21 +2,31 @@ package fr.iamacat.autoplay;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.block.AbstractBlock;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.item.ItemEntity;
 import net.minecraft.entity.passive.PigEntity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.AxisAlignedBB;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import net.minecraft.world.server.ServerWorld;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
+import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.LogicalSide;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.registries.ForgeRegistries;
 
 /**
  * Autoplay companion (DEV ONLY, never ships): drives the scripted client
@@ -32,7 +42,47 @@ import net.minecraftforge.fml.common.Mod;
  * re-lands the same deterministic cells -- the union is a fixed point).
  * World name follows AUTOPLAY_WORLD (default matou), matching verify.
  *
- * <p>Spawn proof (SPAWN=1, DEV ONLY): the bridge itself lands budgeted
+  * <p>Loot proof (LOOT=1, DEV ONLY): at LOOT_HARVEST_TICK server-world
+  * ticks the companion harvests the registered ore at an isolated coords
+  * outside the union slices (8,10,8 — place + clear + a
+  * {@code BreakEvent} post authored by the joined player, spike honesty
+  * standard) and, five ticks later, kills a spawned vanilla pig at
+  * (12,10,8) with a simulated {@code LivingDropsEvent} post (T1
+  * any-kill-pays — hub decisions/LOOT.md; the species narrows when
+  * custom-entity registration lands) — then polls both spots for the
+  * diamond carrier the bridge loot sink spawns per due drop. The posts
+  * are simulated, honestly: place + clear + bus posts exercise the
+  * shipped hooks ({@code onHarvest} reads the IWorld/block through the
+  * 36.2.42 getters; {@code onKill} reads the entity only) through the
+  * live seal ({@code LootSeal}), the pure {@code LootJob} and the live
+  * sink — that seam is what loot owns. What is NOT re-proven is vanilla
+  * firing the events on a genuine harvest/kill (Forge-owned, shape-pinned
+  * in run-live.sh). A carrier observed late, or never, fails loudly
+  * (loot FAILED) and shuts the game down for post-mortem. Without LOOT=1
+  * nothing here runs and the proof is byte-for-byte the proven union run.
+  *
+  * <p>1.16.5 native spelling (measured against the pinned 36.2.42 bytes,
+  * never ported blind from 1122): the ore resolves through
+  * {@code ForgeRegistries.BLOCKS} (presence first — {@code getValue}
+  * returns air for unknown names, never null); the state comes from
+  * {@code Block.getDefaultState}; air probes go through
+  * {@code World.getBlockState} + {@code BlockStateBase.isAir} (no
+  * {@code isAirBlock} field shape); place goes through
+  * {@code World.setBlockState}, clear through {@code World.removeBlock}
+  * (the 1.12 {@code setBlockToAir} shape does not port); the harvest
+  * post is a {@code world}-package {@code BreakEvent} authored by the
+  * joined player from {@code ServerWorld.getPlayers} (no
+  * {@code playerEntities} field ships on 1.16.5); the victim is a
+  * {@code new PigEntity(EntityType.PIG, world)} (the 1.12 no-arg shape
+  * does not port — the type rides the vanilla {@code EntityType.PIG}
+  * field); the spawn lands through {@code ServerWorld.addEntity} (the
+  * loot sink, never the private {@code addEntity0}); removal goes
+  * through {@code Entity.remove} (the 1.12 {@code setDead} name does
+  * not port); carriers poll through {@code getEntitiesWithinAABB} over
+  * one box per spot (the 1.12 {@code loadedEntityList} field shape does
+  * not port).
+  *
+  * <p>Spawn proof (SPAWN=1, DEV ONLY): the bridge itself lands budgeted
  * pigs (SPAWN=1 also arms {@code MatouBridgeMod.spawnTick} -- one flag
  * drives both sides, so union runs stay spawn-free). The companion never
  * spawns here: it polls the loaded pigs the bridge landed up to cap,
@@ -68,6 +118,17 @@ public class AutoplayMod {
     public static final String MODID = "matouautoplay";
     static final int WAIT_TICKS = 5200;
     static final String WORLD = System.getenv().getOrDefault("AUTOPLAY_WORLD", "matou");
+    static final boolean LOOT = "1".equals(System.getenv("LOOT"));
+    static final int LOOT_ORE_X = 8;
+    static final int LOOT_ORE_Y = 10;
+    static final int LOOT_ORE_Z = 8;
+    static final String LOOT_ORE_BLOCK = "example1:my_ore";
+    static final int LOOT_BEAST_X = 12;
+    static final int LOOT_BEAST_Y = 10;
+    static final int LOOT_BEAST_Z = 8;
+    static final int LOOT_HARVEST_TICK = 1000;
+    static final int LOOT_BEAST_DELAY = 5;
+    static final int LOOT_TIMEOUT = 600;
     static final boolean SPAWN = "1".equals(System.getenv("SPAWN"));
     /** Mirrors the effective cap (content {@code owned.matou mob my_beast
      * cap} default, operator {@code spawn.cap} wins -- transported by the
@@ -92,6 +153,13 @@ public class AutoplayMod {
             -64, 0, -64, 64, 256, 64);
 
     volatile int worldTicks = 0;
+    volatile int lootOreTick = -1;
+    volatile int lootBeastTick = -1;
+    volatile boolean oreDropped = false;
+    volatile boolean beastDropped = false;
+    volatile boolean lootFailed = false;
+    volatile int oreDropTick = -1;
+    volatile int beastDropTick = -1;
     volatile boolean pigSeen = false;
     volatile boolean hpSeen = false;
     volatile int maxPigs = 0;
@@ -107,6 +175,7 @@ public class AutoplayMod {
     int ticks = 0;
     World world = null;
     boolean foreignNoted = false;
+    boolean playerNoted = false;
     boolean joined = false;
     boolean done = false;
 
@@ -143,13 +212,13 @@ public class AutoplayMod {
                 || event.phase != TickEvent.Phase.END) {
             return;
         }
-        if (!SPAWN || spawnFailed) {
+        if (!LOOT && !SPAWN) {
             return;
         }
         if (!World.OVERWORLD.equals(event.world.getDimensionKey())) {
             if (!foreignNoted) {
                 foreignNoted = true;
-                System.out.println("[MatouAutoplay] note spawn-proof : "
+                System.out.println("[MatouAutoplay] note loot-proof : "
                         + "ignoring non-overworld world ticks (the "
                         + "integrated server ticks every dim from boot)");
             }
@@ -157,12 +226,219 @@ public class AutoplayMod {
         }
         if (world == null) {
             world = event.world;
-            System.out.println("[MatouAutoplay] spawn armed <cap="
-                    + SPAWN_CAP + "> killAt=" + SPAWN_KILL_TICK
-                    + " (SPAWN=1)");
+            if (LOOT) {
+                System.out.println("[MatouAutoplay] loot armed <ore "
+                        + LOOT_ORE_X + "," + LOOT_ORE_Y + ","
+                        + LOOT_ORE_Z + ":" + LOOT_ORE_BLOCK + " + pig "
+                        + LOOT_BEAST_X + "," + LOOT_BEAST_Y + ","
+                        + LOOT_BEAST_Z + "> harvestAt="
+                        + LOOT_HARVEST_TICK + " (LOOT=1)");
+            }
+            if (SPAWN) {
+                System.out.println("[MatouAutoplay] spawn armed <cap="
+                        + SPAWN_CAP + "> killAt=" + SPAWN_KILL_TICK
+                        + " (SPAWN=1)");
+            }
         }
         worldTicks++;
-        spawnTick();
+        if (LOOT && !lootFailed) {
+            lootTick();
+        }
+        if (SPAWN && !spawnFailed) {
+            spawnTick();
+        }
+    }
+
+    private void lootFail(String what) {
+        lootFailed = true;
+        System.out.println("[MatouAutoplay] FAIL loot-proof : " + what);
+    }
+
+    private void lootTick() {
+        if (lootOreTick < 0 && worldTicks >= LOOT_HARVEST_TICK) {
+            lootOre();
+        } else if (lootOreTick >= 0 && lootBeastTick < 0
+                && worldTicks >= lootOreTick + LOOT_BEAST_DELAY) {
+            lootBeast();
+        }
+        if ((lootOreTick >= 0 && !oreDropped)
+                || (lootBeastTick >= 0 && !beastDropped)) {
+            lootPoll();
+        }
+        if (!(oreDropped && beastDropped)
+                && worldTicks > LOOT_HARVEST_TICK + LOOT_TIMEOUT) {
+            lootFail("timeout (oreDropped=" + oreDropped + " beastDropped="
+                    + beastDropped + " " + LOOT_TIMEOUT
+                    + " ticks after harvest at worldTick "
+                    + LOOT_HARVEST_TICK + ")");
+        }
+    }
+
+    /**
+     * Joined player or null (postponed, loudly once): both simulated
+     * events are authored by the joined player — the break post carries
+     * it like the spike harvest post, and an authorless kill proves
+     * nothing. Checked before touching the world. 1.16.5 shape: no
+     * {@code playerEntities} field ships, so the list comes from
+     * {@code ServerWorld.getPlayers} (the tick world is always a server
+     * world on this path — anything else postpones, never casts blind).
+     */
+    private PlayerEntity lootPlayer() {
+        if (!(world instanceof ServerWorld)) {
+            if (!playerNoted) {
+                playerNoted = true;
+                System.out.println("[MatouAutoplay] note loot-proof : "
+                        + "non-server world at harvest tick, postponing");
+            }
+            return null;
+        }
+        List<? extends PlayerEntity> players =
+                ((ServerWorld) world).getPlayers();
+        if (players == null || players.isEmpty()) {
+            if (!playerNoted) {
+                playerNoted = true;
+                System.out.println("[MatouAutoplay] note loot-proof : "
+                        + "player absent at harvest tick, postponing");
+            }
+            return null;
+        }
+        return players.get(0);
+    }
+
+    private void lootOre() {
+        PlayerEntity player = lootPlayer();
+        if (player == null) {
+            return;
+        }
+        if (!ForgeRegistries.BLOCKS.containsKey(
+                new ResourceLocation(LOOT_ORE_BLOCK))) {
+            lootFail("unknown <" + LOOT_ORE_BLOCK + "> (want registered ore)");
+            return;
+        }
+        Block ore = ForgeRegistries.BLOCKS.getValue(
+                new ResourceLocation(LOOT_ORE_BLOCK));
+        if (ore == null) {
+            lootFail("unknown <" + LOOT_ORE_BLOCK + "> (want registered ore)");
+            return;
+        }
+        BlockState oreState = ore.getDefaultState();
+        BlockPos at = new BlockPos(LOOT_ORE_X, LOOT_ORE_Y, LOOT_ORE_Z);
+        // Owner discipline (hub decisions/LOOT.md): isAir lives on the
+        // declaring AbstractBlockState type, never on BlockState — the
+        // hierarchy walk only maps the exact bytecode owner, so the
+        // read goes through an upcast local (same upcast as the 1201
+        // Level/isClientSide fix).
+        AbstractBlock.AbstractBlockState before =
+                world.getBlockState(at);
+        if (!before.isAir()) {
+            lootFail("loot cell occupied before place (want air)");
+            return;
+        }
+        if (!world.setBlockState(at, oreState)) {
+            lootFail("place refused (setBlockState false at worldTick "
+                    + worldTicks + ")");
+            return;
+        }
+        AbstractBlock.AbstractBlockState placed =
+                world.getBlockState(at);
+        if (placed.isAir()) {
+            lootFail("place invisible (still air after setBlockState)");
+            return;
+        }
+        if (!world.removeBlock(at, false)) {
+            lootFail("clear refused (removeBlock false)");
+            return;
+        }
+        AbstractBlock.AbstractBlockState cleared =
+                world.getBlockState(at);
+        if (!cleared.isAir()) {
+            lootFail("clear invisible (not air after removeBlock)");
+            return;
+        }
+        MinecraftForge.EVENT_BUS.post(new BlockEvent.BreakEvent(
+                world, at, oreState, player));
+        lootOreTick = worldTicks;
+        System.out.println("[MatouAutoplay] loot ore harvested <"
+                + LOOT_ORE_X + "," + LOOT_ORE_Y + "," + LOOT_ORE_Z + ":"
+                + LOOT_ORE_BLOCK + "> at worldTick " + lootOreTick);
+    }
+
+    private void lootBeast() {
+        if (lootPlayer() == null) {
+            return;
+        }
+        // T1 any-kill-pays (hub decisions/LOOT.md): the loot kill lands
+        // on a vanilla pig — every kill pays the single table entry
+        // (per-mob filtering stays a re-opener).
+        PigEntity pig = new PigEntity(EntityType.PIG, world);
+        // Owner discipline (hub decisions/LOOT.md): inherited vanilla
+        // members go through the declaring stub type, never the pig.
+        Entity body = pig;
+        body.setPositionAndRotation(LOOT_BEAST_X + 0.5, LOOT_BEAST_Y,
+                LOOT_BEAST_Z + 0.5, 0.0f, 0.0f);
+        if (!(world instanceof ServerWorld)
+                || !((ServerWorld) world).addEntity(pig)) {
+            lootFail("pig spawn refused at worldTick " + worldTicks);
+            return;
+        }
+        MinecraftForge.EVENT_BUS.post(new LivingDropsEvent(pig, null,
+                new ArrayList<ItemEntity>(), 0, true));
+        body.remove();
+        lootBeastTick = worldTicks;
+        System.out.println("[MatouAutoplay] loot beast killed <"
+                + LOOT_BEAST_X + "," + LOOT_BEAST_Y + ","
+                + LOOT_BEAST_Z + ":pig> at worldTick "
+                + lootBeastTick);
+    }
+
+    private void lootPoll() {
+        if (!oreDropped) {
+            List<ItemEntity> found = world.getEntitiesWithinAABB(
+                    ItemEntity.class, box(LOOT_ORE_X, LOOT_ORE_Y,
+                            LOOT_ORE_Z),
+                    (ItemEntity e) -> true);
+            for (ItemEntity item : found) {
+                ItemStack stack = item.getItem();
+                if (stack == null || stack.getItem() != Items.DIAMOND) {
+                    continue;
+                }
+                if (near(item, LOOT_ORE_X, LOOT_ORE_Y, LOOT_ORE_Z)) {
+                    oreDropped = true;
+                    oreDropTick = worldTicks;
+                    System.out.println("[MatouAutoplay] loot ore dropped "
+                            + "<diamond> at worldTick " + oreDropTick
+                            + " (elapsed " + (oreDropTick - lootOreTick)
+                            + ", want immediate)");
+                    break;
+                }
+            }
+        }
+        if (!beastDropped && lootBeastTick >= 0) {
+            List<ItemEntity> found = world.getEntitiesWithinAABB(
+                    ItemEntity.class, box(LOOT_BEAST_X, LOOT_BEAST_Y,
+                            LOOT_BEAST_Z),
+                    (ItemEntity e) -> true);
+            for (ItemEntity item : found) {
+                ItemStack stack = item.getItem();
+                if (stack == null || stack.getItem() != Items.DIAMOND) {
+                    continue;
+                }
+                if (near(item, LOOT_BEAST_X, LOOT_BEAST_Y, LOOT_BEAST_Z)) {
+                    beastDropped = true;
+                    beastDropTick = worldTicks;
+                    System.out.println("[MatouAutoplay] loot beast dropped "
+                            + "<diamond> at worldTick " + beastDropTick
+                            + " (elapsed " + (beastDropTick - lootBeastTick)
+                            + ", want immediate)");
+                    break;
+                }
+            }
+        }
+    }
+
+    private static AxisAlignedBB box(int x, int y, int z) {
+        return new AxisAlignedBB(x - 2.5, y - 2.5, z - 2.5,
+                x + 3.5, y + 3.5, z + 3.5);
     }
 
     private void spawnFail(String what) {
@@ -305,6 +581,12 @@ public class AutoplayMod {
             return;
         }
         ticks++;
+        if (LOOT && lootFailed && !done) {
+            done = true;
+            System.out.println("[MatouAutoplay] loot FAILED, shutting down");
+            mc.shutdown();
+            return;
+        }
         if (SPAWN && spawnFailed && !done) {
             done = true;
             System.out.println("[MatouAutoplay] spawn FAILED, shutting down");
@@ -312,6 +594,7 @@ public class AutoplayMod {
             return;
         }
         if (ticks >= WAIT_TICKS
+                && (!LOOT || (oreDropped && beastDropped))
                 && (!SPAWN || (pigSeen && carrierDropped))
                 && !done) {
             done = true;

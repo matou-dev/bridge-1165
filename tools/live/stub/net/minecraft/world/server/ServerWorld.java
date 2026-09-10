@@ -20,4 +20,17 @@ public class ServerWorld extends World {
     public boolean addEntity(Entity entity) {
         return false;
     }
+
+    /**
+     * Loot companion player probe (hub decisions/LOOT.md loot port
+     * tranche): the joined player authors the simulated break/kill posts
+     * (measured in the pinned joined.tsrg + snapshot 20210309 —
+     * {@code getPlayers} is {@code func_217369_A} on this class; no
+     * {@code playerEntities} field ships on 1.16.5, the 1.12 field shape
+     * does not port). Pinned by tools/autoplay/want.txt at staging time
+     * — drift fails loudly.
+     */
+    public java.util.List<? extends net.minecraft.entity.player.PlayerEntity> getPlayers() {
+        return null;
+    }
 }

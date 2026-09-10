@@ -31,6 +31,19 @@ public abstract class AbstractBlock {
         public Block getBlock() {
             return null;
         }
+
+        /**
+         * Loot companion probe (hub decisions/LOOT.md loot port tranche):
+         * air check beside the forge {@code getBlock} read above
+         * (measured owner in the pinned joined.tsrg — {@code isAir} is
+         * {@code func_196958_f} on this inner class, not on
+         * {@code BlockState}, so companion reads through this type and
+         * Reobf maps the exact bytecode owner). Pinned by
+         * tools/autoplay/want.txt at staging time — drift fails loudly.
+         */
+        public boolean isAir() {
+            return false;
+        }
     }
 
     public static class Properties {
