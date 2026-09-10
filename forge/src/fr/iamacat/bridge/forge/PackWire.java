@@ -43,8 +43,15 @@ public final class PackWire {
                     "E_FORGE_PACKS:args rejected <" + spec.className
                             + "> (pack takes no args)");
         }
-        Block block = ForgeRegistries.BLOCKS.getValue(
-                new ResourceLocation(spec.blockName));
+        // Presence first: getValue returns the registry default (air)
+        // for unknown names, never null — resolving without the probe
+        // would wire typos to air silently (found live at registration).
+        ResourceLocation id = new ResourceLocation(spec.blockName);
+        if (!ForgeRegistries.BLOCKS.containsKey(id)) {
+            throw new IllegalArgumentException("E_FORGE_BLOCK:unknown <"
+                    + spec.blockName + ">");
+        }
+        Block block = ForgeRegistries.BLOCKS.getValue(id);
         if (block == null) {
             throw new IllegalArgumentException("E_FORGE_BLOCK:unknown <"
                     + spec.blockName + ">");

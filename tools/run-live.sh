@@ -166,7 +166,9 @@ echo "ok e3-live : server provisioned (pins verified)"
 #    per member, loud otherwise), and the MCP snapshot locks SRG<->MCP
 #    names. The map covers every vanilla member our forge/ bytecode
 #    references (verified by constant-pool scan at E3 time:
-#    getDefaultState, setBlockState, getDimensionKey, OVERWORLD).
+#    getDefaultState, setBlockState, getDimensionKey, OVERWORLD, plus the
+#    registration tranche: getStateId, Properties.create,
+#    hardnessAndResistance, Material.ROCK).
 #    The snapshot lock is load-bearing, not documentary: World carries
 #    three same-type static RegistryKey fields (OVERWORLD, THE_NETHER,
 #    THE_END), so descriptor + static-ness alone cannot pick OVERWORLD —
@@ -183,6 +185,10 @@ WANT = [
     ("net/minecraft/world/World", "func_175656_a", "setBlockState", "(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;)Z", "method", False),
     ("net/minecraft/world/World", "func_234923_W_", "getDimensionKey", "()Lnet/minecraft/util/RegistryKey;", "method", False),
     ("net/minecraft/world/World", "field_234918_g_", "OVERWORLD", "Lnet/minecraft/util/RegistryKey;", "field", True),
+    ("net/minecraft/block/Block", "func_196246_j", "getStateId", "(Lnet/minecraft/block/BlockState;)I", "method", True),
+    ("net/minecraft/block/AbstractBlock$Properties", "func_200945_a", "create", "(Lnet/minecraft/block/material/Material;)Lnet/minecraft/block/AbstractBlock$Properties;", "method", True),
+    ("net/minecraft/block/AbstractBlock$Properties", "func_200943_b", "hardnessAndResistance", "(F)Lnet/minecraft/block/AbstractBlock$Properties;", "method", False),
+    ("net/minecraft/block/material/Material", "field_151576_e", "ROCK", "Lnet/minecraft/block/material/Material;", "field", True),
 ]
 z = zipfile.ZipFile(snapshot)
 mcpnames = {}
@@ -193,7 +199,7 @@ for row in z.read("fields.csv").decode("utf-8").splitlines()[1:]:
 for owner, srg, mcp, desc, kind, want_static in WANT:
     assert mcpnames.get(srg) == mcp, \
         "E_SRG_DERIVE:snapshot <%s> is <%s>, want <%s>" % (srg, mcpnames.get(srg), mcp)
-print("ok e3-live : snapshot names confirm 4/4")
+print("ok e3-live : snapshot names confirm 8/8")
 srg2obf, classes = {}, {}
 cur = None
 for raw in tsrg.splitlines():
@@ -225,7 +231,11 @@ def javap_flags(cls):
                 static = bool(re.search(r"\bstatic\b", s.split("(")[0]))
                 name = m.group(1)
             elif "(" not in s and s.endswith(";") and "{" not in s:
-                m2 = re.match(r"(?:(.*)\s)?([\w.$\[\]<>, ]+?)\s+([\w$]+);", s)
+                # Field type class carries `?` for javap-printed wildcards
+                # (e.g. `ceg$d<aqe<?>>` in AbstractBlock$Properties —
+                # measured, not assumed: the inner class holds a generic
+                # optional field, and the pre-fix class failed loud here).
+                m2 = re.match(r"(?:(.*)\s)?([\w.$\[\]<>, ?]+?)\s+([\w$]+);", s)
                 assert m2, "E_SRG_DERIVE:unparsed javap line <%s> in <%s>" % (s, cls)
                 static = bool(re.search(r"\bstatic\b", m2.group(1) or ""))
                 name = m2.group(3)
@@ -233,7 +243,14 @@ def javap_flags(cls):
     return res
 
 lines = []
-for owner, srg, mcp, desc, kind, want_static in WANT:
+for row in WANT:
+    owner, srg, mcp, desc, kind, want_static = row[:6]
+    # SRG anchor (1122 port lesson): several vanilla members share one
+    # descriptor (here four hardnessAndResistance overloads), so javap
+    # static-ness alone cannot pick — the snapshot SRG name filters
+    # first, tsrg + javap still confirm (an anchor missing from the
+    # pinned bytes fails loud).
+    anchor = srg
     obf_owner = srg2obf[owner]
     members = classes[owner]
     flags = javap_flags(obf_owner)
@@ -241,6 +258,8 @@ for owner, srg, mcp, desc, kind, want_static in WANT:
         od = obf_desc(desc)
         cands = [(m[0], m[2]) for m in members if len(m) == 3 and m[1] == od]
         assert cands, "E_SRG_DERIVE:no tsrg member <%s %s>" % (owner, mcp)
+        cands = [(n, s) for n, s in cands if s == anchor]
+        assert cands, "E_SRG_DERIVE:no tsrg member <%s %s> (anchor %s absent)" % (owner, mcp, anchor)
         hits = [(n, s) for n, s in cands if flags.get((n, od)) == want_static]
         assert len(hits) == 1, "E_SRG_DERIVE:ambiguous <%s %s> %s" % (owner, mcp, hits)
         assert hits[0][1] == srg, \
@@ -253,7 +272,7 @@ for owner, srg, mcp, desc, kind, want_static in WANT:
         assert flags.get((tm[0][0], "F:" + ftype_obf)) == want_static, \
             "E_SRG_DERIVE:javap mismatch field <%s %s>" % (owner, srg)
         lines.append("FD: %s/%s %s/%s" % (owner, tm[0][1], owner, mcp))
-assert len(lines) == 4, "E_SRG_DERIVE:want 4 lines, got %d" % len(lines)
+assert len(lines) == 8, "E_SRG_DERIVE:want 8 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok e3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -269,11 +288,15 @@ pin_field() {
     || { echo "FAIL e3-live : stub field unpinned <$1>"; exit 1; }
 }
 pin_method "net/minecraft/block/Block/getDefaultState" "()Lnet/minecraft/block/BlockState;"
+pin_method "net/minecraft/block/Block/getStateId" "(Lnet/minecraft/block/BlockState;)I"
+pin_method "net/minecraft/block/AbstractBlock\$Properties/create" "(Lnet/minecraft/block/material/Material;)Lnet/minecraft/block/AbstractBlock\$Properties;"
+pin_method "net/minecraft/block/AbstractBlock\$Properties/hardnessAndResistance" "(F)Lnet/minecraft/block/AbstractBlock\$Properties;"
 pin_method "net/minecraft/world/World/setBlockState" "(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;)Z"
 pin_method "net/minecraft/world/World/getDimensionKey" "()Lnet/minecraft/util/RegistryKey;"
 pin_field "net/minecraft/world/World/OVERWORLD"
-[ "$(grep -c . "$SRG_NARROW")" = "4" ] \
-  || { echo "FAIL e3-live : narrow map drift (want 4 lines)"; exit 1; }
+pin_field "net/minecraft/block/material/Material/ROCK"
+[ "$(grep -c . "$SRG_NARROW")" = "8" ] \
+  || { echo "FAIL e3-live : narrow map drift (want 8 lines)"; exit 1; }
 echo "ok e3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed Forge member against the provisioned jars. Forge
@@ -295,6 +318,13 @@ pin_uni 'net.minecraftforge.fml.LogicalSide' 'SERVER'
 pin_uni 'net.minecraftforge.fml.common.Mod' 'value('
 pin_uni 'net.minecraftforge.registries.ForgeRegistries' 'BLOCKS'
 pin_uni 'net.minecraftforge.registries.IForgeRegistry' 'getValue('
+pin_uni 'net.minecraftforge.registries.IForgeRegistry' 'containsKey('
+pin_uni 'net.minecraftforge.registries.DeferredRegister' 'create('
+pin_uni 'net.minecraftforge.registries.DeferredRegister' 'register('
+pin_uni 'net.minecraftforge.fml.RegistryObject' 'get('
+pin_uni 'net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext' 'get()'
+pin_uni 'net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext' 'getModEventBus('
+pin_uni 'net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent' 'FMLCommonSetupEvent'
 # Erased descriptor lock: the real getValue erases V to
 # IForgeRegistryEntry, not Object — an unbounded stub would compile and
 # die live with NoSuchMethodError (found live in E3). Refuse the drift
@@ -308,6 +338,7 @@ pin_eb() {
 }
 pin_eb 'net.minecraftforge.eventbus.api.Event' 'Event'
 pin_eb 'net.minecraftforge.eventbus.api.IEventBus' 'register('
+pin_eb 'net.minecraftforge.eventbus.api.IEventBus' 'addListener('
 pin_eb 'net.minecraftforge.eventbus.api.SubscribeEvent' 'SubscribeEvent'
 echo "ok e3-live : forge stubs pinned to provisioned jars"
 
@@ -465,7 +496,7 @@ if [ "${BUILD_ONLY:-}" = "1" ]; then
   cp "$BLD/jars/matou-minimap.jar" "dist/matou-minimap-$VERSION.jar"
   cp "$BLD/jars/matoubridge-reobf.jar" "dist/matoubridge-$VERSION.jar"
   cp ../example1/content/owned.matou ../example1/content/additive.matou ../example1/content/structure.matou dist/matou-content/
-  printf '# Copy to <server>/config/matoubridge/packs.cfg and replace <SERVER>.\n# Wire y=63 keeps plane cells on their own slice, off the structure slices (64..65).\nfr.iamacat.example1.ExamplePack 63 minecraft:stone ownedFile=<SERVER>/matou-content/owned.matou scatterFile=<SERVER>/matou-content/additive.matou structureFile=<SERVER>/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone\n' > dist/packs.cfg.example
+  printf '# Copy to <server>/config/matoubridge/packs.cfg and replace <SERVER>.\n# Wire y=63 keeps plane cells on their own slice, off the structure slices (64..65).\n# The wire block is the registered custom ore (DeferredRegister queues example1:my_ore from owned.matou, the fill lands before setup binds resolve it); aliases stay vanilla stone.\nfr.iamacat.example1.ExamplePack 63 example1:my_ore ownedFile=<SERVER>/matou-content/owned.matou scatterFile=<SERVER>/matou-content/additive.matou structureFile=<SERVER>/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone\n' > dist/packs.cfg.example
   (cd dist && sha256sum "matou-spi-$VERSION.jar" "matou-example1-$VERSION.jar" "matou-minimap-$VERSION.jar" "matoubridge-$VERSION.jar" matou-content/owned.matou matou-content/additive.matou matou-content/structure.matou packs.cfg.example > SHA256SUMS.txt)
   (cd dist && sha256sum -c SHA256SUMS.txt)
   echo "ok r2-release : dist/ assembled (VERSION=$VERSION)"
@@ -480,8 +511,11 @@ cp "$BLD/jars/matoubridge-reobf.jar" "$SERV/mods/matoubridge.jar"
 rm -rf "$SERV/matou-content" && cp -r ../example1/content "$SERV/matou-content"
 # Wire y=63: plane cells stay on their own slice, off the structure
 # slices (64..65), so the verdict stays per-shape sensitive despite the
-# set collapse (a 2D and a 3D cell can share x,z, never y).
-printf 'fr.iamacat.example1.ExamplePack 63 minecraft:stone ownedFile=%s/matou-content/owned.matou scatterFile=%s/matou-content/additive.matou structureFile=%s/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone\n' "$SERV" "$SERV" "$SERV" > "$SERV/config/matoubridge/packs.cfg"
+# set collapse (a 2D and a 3D cell can share x,z, never y). The wire
+# block is the registered custom ore (the constructor queues it from
+# owned.matou, the deferred fill registers it before setup binds
+# resolve it).
+printf 'fr.iamacat.example1.ExamplePack 63 example1:my_ore ownedFile=%s/matou-content/owned.matou scatterFile=%s/matou-content/additive.matou structureFile=%s/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone\n' "$SERV" "$SERV" "$SERV" > "$SERV/config/matoubridge/packs.cfg"
 echo "eula=true" > "$SERV/eula.txt"
 printf 'online-mode=false\nlevel-type=FLAT\ngamemode=1\ndifficulty=0\nmotd=E3 live proof\nmax-tick-time=-1\n' > "$SERV/server.properties"
 rm -rf "$SERV/world" "$SERV/logs"
@@ -496,17 +530,25 @@ echo "ok e3-live : server ran ($BOOT_SECS s)"
 #    the rolling server log — Forge splits output across both).
 LOGS="$SERV/boot-e3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|Encountered an unexpected exception" $LOGS; then
+if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|Encountered an unexpected exception" $LOGS; then
   echo "FAIL e3-live : runtime refusal (see $SERV/boot-e3.log)"
-  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|Caused by" $LOGS
+  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|Caused by" $LOGS
   exit 1
 fi
 grep -a -q "matoubridge" $LOGS \
   || { echo "FAIL e3-live : mod never loaded"; exit 1; }
 echo "ok e3-live : bind clean, ticks clean"
+# Registration proof: the setup-time verify line carries the dynamic
+# state id (post-flattening names need no numeric table — the anvil
+# probe reads namespaced names, and this line proves the custom name
+# resolved through the registry, never defaulted).
+grep -a -q '\[MatouBridge\] registered <example1:my_ore> id [0-9][0-9]*' $LOGS \
+  || { echo "FAIL e3-live : my_ore registration line absent from boot log (deferred fill never registered? see $SERV/boot-e3.log)"; exit 1; }
+echo "ok e3-live : my_ore registered ($(grep -a -o '\[MatouBridge\] registered <example1:my_ore> id [0-9][0-9]*' $LOGS | tail -n 1))"
 
 # 7. Positive proof: world blocks in chunks (0..1, -1..1) at y=63..65 must
-#    equal the pure decision union — stone only, nothing foreign, nothing
+#    equal the pure decision union — plane cells carry the registered
+#    custom ore, volume cells their alias stone, nothing foreign, nothing
 #    missing. Plane cells land at the wire y=63, volume cells at their own
 #    y=64..65; structure offsets reach x,z=17, and the hut anchor z=-4
 #    spills into chunk row -1 (region r.0.-1.mca) — hence the 6-chunk,
@@ -528,37 +570,50 @@ for spec in "r.0.0.mca 0 0" "r.0.0.mca 1 0" "r.0.0.mca 0 1" \
 done
 python3 - "$BLD/union.txt" "$BLD/world.txt" "$SERV/config/matoubridge/packs.cfg" <<'EOF'
 import sys
-wire_y = None
+# Names resolve through packs.cfg itself (wire block plus every
+# block.<ref>=<name> alias value) — never hardcoded, never guessed. A
+# world name outside that set fails loudly (extend the wire explicitly).
+wire_y, wire_block, allowed = None, None, set()
 for line in open(sys.argv[3]):
     line = line.strip()
     if line and not line.startswith("#"):
-        wire_y = int(line.split()[1])
+        toks = line.split()
+        wire_y, wire_block = int(toks[1]), toks[2]
+        allowed.add(wire_block)
+        for tok in toks[3:]:
+            if tok.startswith("block.") and "=" in tok:
+                allowed.add(tok.split("=", 1)[1])
 if wire_y is None:
     print("FAIL e3-live : no wire in packs.cfg")
     sys.exit(1)
-u = set()
+u = {}
 for line in open(sys.argv[1]):
     cell = line.split()[0]
-    if ":" in cell:
-        x, rest = cell.split(",", 1)
-        y, z = rest.split(",", 1)[0], rest.split(",", 1)[1].split(":")[0]
-        u.add((int(x), int(y), int(z)))
+    parts = cell.split(",")
+    if len(parts) == 3 and ":" in parts[2]:
+        z, bname = parts[2].split(":", 1)
+        pos = (int(parts[0]), int(parts[1]), int(z))
     else:
         x, z = cell.split(",")
-        u.add((int(x), wire_y, int(z)))
+        pos, bname = (int(x), wire_y, int(z)), wire_block
+    if bname not in allowed:
+        print("FAIL e3-live : union block <%s> outside packs.cfg set (extend the wire, never guess)" % bname)
+        sys.exit(1)
+    u[pos] = bname
 rows = [l.split() for l in open(sys.argv[2])]
-w = {(int(x), int(y), int(z)): i for x, y, z, i in rows}
+w = {(int(x), int(y), int(z)): n for x, y, z, n in rows}
 if not w:
     print("FAIL e3-live : world empty at y=63..65 (no tick applied?)")
     sys.exit(1)
-if set(w.values()) != {"minecraft:stone"}:
-    print("FAIL e3-live : foreign blocks %s" % sorted(set(w.values())))
+if set(w.values()) - allowed:
+    print("FAIL e3-live : foreign blocks %s" % sorted(set(w.values()) - allowed))
     sys.exit(1)
-if set(w) - u:
-    print("FAIL e3-live : world cells outside pure union %s" % sorted(set(w) - u)[:5])
+bad = {p: (w[p], u.get(p)) for p in w if u.get(p) != w[p]}
+if bad:
+    print("FAIL e3-live : name mismatch at %s (want pure union names)" % sorted(bad.items())[:5])
     sys.exit(1)
-if u - set(w):
-    print("FAIL e3-live : pure cells missing from world (%d)" % len(u - set(w)))
+if u.keys() - w.keys():
+    print("FAIL e3-live : pure cells missing from world (%d)" % len(u.keys() - w.keys()))
     sys.exit(1)
-print("ok e3-live : world == pure union (%d cells, stone only)" % len(w))
+print("ok e3-live : world == pure union (%d cells, names %s)" % (len(w), sorted(set(w.values()))))
 EOF

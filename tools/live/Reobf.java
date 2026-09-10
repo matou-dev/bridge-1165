@@ -36,27 +36,53 @@ public final class Reobf {
         System.err.println("map: " + methods.size() + " methods, " + fields.size() + " fields");
         final Map<String, String> m = methods;
         final Map<String, String> f = fields;
+        // In-jar superclass chain (internal names): forge/ subclasses
+        // vanilla (MatouBlock extends Block) and inherited member refs
+        // compile with the project class as owner. An owner-blind map
+        // leaves the MCP name in place and dies linking live (measured
+        // on 1122: NoSuchMethodError MatouBlock.setHardness at the
+        // registry event — same class as the 1710 setBlockName finding;
+        // here verifyRegistered calls getDefaultState on the
+        // RegistryObject<MatouBlock> value, owner MatouBlock). Owners
+        // outside net/minecraft/ walk this chain; the first SRG hit
+        // wins. Overriding declarations flow through the same hooks
+        // (ClassRemapper visits them), so overrides link too.
+        JarFile in = new JarFile(a[1]);
+        final Map<String, String> supers = new HashMap<String, String>();
+        Enumeration<JarEntry> scan = in.entries();
+        while (scan.hasMoreElements()) {
+            JarEntry e = scan.nextElement();
+            if (!e.getName().endsWith(".class")) {
+                continue;
+            }
+            InputStream is = in.getInputStream(e);
+            byte[] data = readAll(is);
+            is.close();
+            ClassReader cr = new ClassReader(data);
+            supers.put(cr.getClassName(), cr.getSuperName());
+        }
         Remapper remapper = new Remapper() {
-            public String mapMethodName(String owner, String name, String desc) {
-                if (owner.startsWith("net/minecraft/")) {
-                    String hit = m.get(owner + "." + name + desc);
+            private String walk(Map<String, String> map, String owner,
+                    String member) {
+                String o = owner;
+                while (o != null) {
+                    String hit = map.get(o + "." + member);
                     if (hit != null) {
                         return hit;
                     }
+                    o = supers.get(o);
                 }
-                return name;
+                return null;
+            }
+            public String mapMethodName(String owner, String name, String desc) {
+                String hit = walk(m, owner, name + desc);
+                return hit != null ? hit : name;
             }
             public String mapFieldName(String owner, String name, String desc) {
-                if (owner.startsWith("net/minecraft/")) {
-                    String hit = f.get(owner + "." + name);
-                    if (hit != null) {
-                        return hit;
-                    }
-                }
-                return name;
+                String hit = walk(f, owner, name);
+                return hit != null ? hit : name;
             }
         };
-        JarFile in = new JarFile(a[1]);
         JarOutputStream out = new JarOutputStream(new FileOutputStream(a[2]));
         Enumeration<JarEntry> en = in.entries();
         int remappedRefs = 0;

@@ -32,10 +32,10 @@ import net.minecraftforge.registries.ForgeRegistries;
  * shared catalog). Only this package may touch {@code net.minecraft} /
  * {@code net.minecraftforge}.
  *
- * <p>Ordering note: {@link MatouBridgeMod} still binds in its own
- * constructor (unchanged this tranche), which runs before the deferred
- * fill — so a custom wire refuses loudly there until the bind-timing
- * tranche defers it. Registration never silently lags a bind.
+ * <p>Ordering note: {@link MatouBridgeMod} binds its wires in its own
+ * common-setup listener (deferred-registry fill lands one loading state
+ * earlier), so custom wires resolve there whatever the mod order.
+ * Registration never silently lags a bind.
  */
 @Mod(Example1Mod.MODID)
 public final class Example1Mod {
@@ -108,8 +108,8 @@ public final class Example1Mod {
         if (REGISTERED.containsKey(want)) {
             return;
         }
-        if (ForgeRegistries.BLOCKS.getValue(
-                new ResourceLocation(want)) != null) {
+        if (ForgeRegistries.BLOCKS.containsKey(
+                new ResourceLocation(want))) {
             throw new IllegalArgumentException(
                     "E_REG_DUP:already registered <" + want + ">");
         }
