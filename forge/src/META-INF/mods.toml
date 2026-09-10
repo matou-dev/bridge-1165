@@ -23,7 +23,7 @@ side="BOTH"
 modId="example1"
 version="@VERSION@"
 displayName="MatouExample1"
-description="Example1 content registration for the Matou bridge (generic block, spec-driven)."
+description="Example1 content registration for the Matou bridge (generic block + generic beast, spec-driven)."
 [[dependencies.example1]]
 modId="forge"
 mandatory=true

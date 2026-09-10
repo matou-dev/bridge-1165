@@ -138,6 +138,8 @@ echo "$ASM_COMMONS_SHA1  $ASM_COMMONS" | sha1sum -c - >/dev/null 2>&1 \
   || { echo "FAIL e3-live : ASM commons sha1 drift (want $ASM_COMMONS_SHA1)"; exit 1; }
 EVENTBUS=$(find "$SERV/libraries/net/minecraftforge/eventbus" -name "eventbus-4.0.0.jar" | head -n 1)
 [ -n "$EVENTBUS" ] || { echo "FAIL e3-live : eventbus 4.0.0 missing from server libs"; exit 1; }
+FORGESPI=$(find "$SERV/libraries/net/minecraftforge/forgespi" -name "forgespi-*.jar" | head -n 1)
+[ -n "$FORGESPI" ] || { echo "FAIL e3-live : forgespi missing from server libs"; exit 1; }
 if [ ! -f "$E3_DIR/mcp_config-1.16.5-20210115.111550.zip" ]; then
   if [ "${E3_OFFLINE:-}" = "1" ]; then
     echo "FAIL e3-live : offline and MCP config absent ($E3_DIR/mcp_config-1.16.5-20210115.111550.zip)"
@@ -176,7 +178,14 @@ echo "ok e3-live : server provisioned (pins verified)"
 #    World/getEntitiesWithinAABB,
 #    LivingEntity/getAttribute/getMaxHealth/setHealth,
 #    ModifiableAttributeInstance/setBaseValue, Attributes/MAX_HEALTH,
-#    EntityType/PIG).
+#    EntityType/PIG, plus the custom entity tranche (hub
+#    decisions/SPAWN.md): EntityType$Builder/create/size/trackingRange/
+#    build. EntityClassification/CREATURE needs no row (enum constants
+#    ship MCP-named in joined.tsrg — runtime name identical, passthrough
+#    by construction like Forge classes); client refs (PigRenderer) and
+#    Forge refs (ENTITIES, RenderingRegistry, DistExecutor) pass the
+#    server Reobf untouched (unmapped refs pass through — same split as
+#    the 1122 custom entity tranche, client link measured at live time).
 #    The snapshot lock is load-bearing, not documentary: World carries
 #    three same-type static RegistryKey fields (OVERWORLD, THE_NETHER,
 #    THE_END), so descriptor + static-ness alone cannot pick OVERWORLD —
@@ -218,6 +227,10 @@ WANT = [
     ("net/minecraft/entity/ai/attributes/ModifiableAttributeInstance", "func_111128_a", "setBaseValue", "(D)V", "method", False),
     ("net/minecraft/entity/ai/attributes/Attributes", "field_233818_a_", "MAX_HEALTH", "Lnet/minecraft/entity/ai/attributes/Attribute;", "field", True),
     ("net/minecraft/entity/EntityType", "field_200784_X", "PIG", "Lnet/minecraft/entity/EntityType;", "field", True),
+    ("net/minecraft/entity/EntityType$Builder", "func_220322_a", "create", "(Lnet/minecraft/entity/EntityType$IFactory;Lnet/minecraft/entity/EntityClassification;)Lnet/minecraft/entity/EntityType$Builder;", "method", True),
+    ("net/minecraft/entity/EntityType$Builder", "func_220321_a", "size", "(FF)Lnet/minecraft/entity/EntityType$Builder;", "method", False),
+    ("net/minecraft/entity/EntityType$Builder", "func_233606_a_", "trackingRange", "(I)Lnet/minecraft/entity/EntityType$Builder;", "method", False),
+    ("net/minecraft/entity/EntityType$Builder", "func_206830_a", "build", "(Ljava/lang/String;)Lnet/minecraft/entity/EntityType;", "method", False),
 ]
 z = zipfile.ZipFile(snapshot)
 mcpnames = {}
@@ -228,7 +241,7 @@ for row in z.read("fields.csv").decode("utf-8").splitlines()[1:]:
 for owner, srg, mcp, desc, kind, want_static in WANT:
     assert mcpnames.get(srg) == mcp, \
         "E_SRG_DERIVE:snapshot <%s> is <%s>, want <%s>" % (srg, mcpnames.get(srg), mcp)
-print("ok e3-live : snapshot names confirm 29/29")
+print("ok e3-live : snapshot names confirm 33/33")
 srg2obf, classes = {}, {}
 cur = None
 for raw in tsrg.splitlines():
@@ -313,7 +326,7 @@ for row in WANT:
         assert flags.get((tm[0][0], "F:" + ftype_obf)) == want_static, \
             "E_SRG_DERIVE:javap mismatch field <%s %s>" % (owner, srg)
         lines.append("FD: %s/%s %s/%s" % (owner, tm[0][1], owner, mcp))
-assert len(lines) == 29, "E_SRG_DERIVE:want 29 lines, got %d" % len(lines)
+assert len(lines) == 33, "E_SRG_DERIVE:want 33 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok e3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -357,8 +370,12 @@ pin_method "net/minecraft/entity/LivingEntity/setHealth" "(F)V"
 pin_method "net/minecraft/entity/ai/attributes/ModifiableAttributeInstance/setBaseValue" "(D)V"
 pin_field "net/minecraft/entity/ai/attributes/Attributes/MAX_HEALTH"
 pin_field "net/minecraft/entity/EntityType/PIG"
-[ "$(grep -c . "$SRG_NARROW")" = "29" ] \
-  || { echo "FAIL e3-live : narrow map drift (want 29 lines)"; exit 1; }
+pin_method "net/minecraft/entity/EntityType\$Builder/create" "(Lnet/minecraft/entity/EntityType\$IFactory;Lnet/minecraft/entity/EntityClassification;)Lnet/minecraft/entity/EntityType\$Builder;"
+pin_method "net/minecraft/entity/EntityType\$Builder/size" "(FF)Lnet/minecraft/entity/EntityType\$Builder;"
+pin_method "net/minecraft/entity/EntityType\$Builder/trackingRange" "(I)Lnet/minecraft/entity/EntityType\$Builder;"
+pin_method "net/minecraft/entity/EntityType\$Builder/build" "(Ljava/lang/String;)Lnet/minecraft/entity/EntityType;"
+[ "$(grep -c . "$SRG_NARROW")" = "33" ] \
+  || { echo "FAIL e3-live : narrow map drift (want 33 lines)"; exit 1; }
 echo "ok e3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed Forge member against the provisioned jars. Forge
@@ -396,6 +413,20 @@ pin_uni 'net.minecraftforge.event.entity.living.LivingDropsEvent' 'LivingDropsEv
 pin_uni 'net.minecraftforge.event.entity.EntityJoinWorldEvent' 'EntityJoinWorldEvent('
 pin_uni 'net.minecraftforge.event.entity.EntityJoinWorldEvent' 'getWorld('
 pin_uni 'net.minecraftforge.event.entity.EntityEvent' 'getEntity('
+# Custom entity tranche (hub decisions/SPAWN.md): the generic beast
+# queues through DeferredRegister on ForgeRegistries.ENTITIES (same
+# create/register calls the block tranche already pins), the setup-time
+# tripwire reads it back, the client-only renderer rides the
+# IRenderFactory path (the single (EntityRendererManager) pig ctor,
+# measured from the pinned notch client jar), and DistExecutor keeps the
+# mapping off dedicated servers. Forge names are runtime-final:
+# presence is the pin. Dist/OnlyIn ship the forgespi jar, not the
+# universal (measured — same split as eventbus below, no sha1 pin,
+# presence only).
+pin_uni 'net.minecraftforge.registries.ForgeRegistries' 'ENTITIES'
+pin_uni 'net.minecraftforge.fml.DistExecutor' 'runWhenOn('
+pin_uni 'net.minecraftforge.fml.client.registry.RenderingRegistry' 'registerEntityRenderingHandler('
+pin_uni 'net.minecraftforge.fml.client.registry.IRenderFactory' 'createRenderFor('
 # Erased descriptor lock: the real getValue erases V to
 # IForgeRegistryEntry, not Object — an unbounded stub would compile and
 # die live with NoSuchMethodError (found live in E3). Refuse the drift
@@ -413,6 +444,12 @@ pin_eb 'net.minecraftforge.eventbus.api.IEventBus' 'register('
 pin_eb 'net.minecraftforge.eventbus.api.IEventBus' 'addListener('
 pin_eb 'net.minecraftforge.eventbus.api.IEventBus' 'post('
 pin_eb 'net.minecraftforge.eventbus.api.SubscribeEvent' 'SubscribeEvent'
+pin_spi() {
+  "$J8/javap" -p -cp "$FORGESPI" "$1" 2>/dev/null | grep -q "$2" \
+    || { echo "FAIL e3-live : forgespi pin unmet <$1 :: $2>"; exit 1; }
+}
+pin_spi 'net.minecraftforge.api.distmarker.Dist' 'CLIENT'
+pin_spi 'net.minecraftforge.api.distmarker.OnlyIn' 'value('
 echo "ok e3-live : forge stubs pinned to provisioned jars"
 
 # 3. Build all mod jars with Java 8. forge/ compiles against the pinned
