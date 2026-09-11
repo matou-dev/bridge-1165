@@ -160,13 +160,42 @@ if [ ! -f "$E3_DIR/mcp_snapshot-20210309-1.16.5.zip" ]; then
 fi
 echo "$MCP_SNAPSHOT_SHA1  $E3_DIR/mcp_snapshot-20210309-1.16.5.zip" | sha1sum -c - >/dev/null 2>&1 \
   || { echo "FAIL e3-live : MCP snapshot sha1 drift (want $MCP_SNAPSHOT_SHA1)"; exit 1; }
+# Pinned vanilla client (tools/autoplay/client-pin.txt — the AUTOPLAY
+# companion derive already trusts it; this script reuses the same bytes,
+# never its own pin): client-only vanilla members (net/minecraft/client/*,
+# com/mojang/*, e.g. the renderer tranche's Minecraft/getInstance) cannot
+# javap-verify against the notch SERVER jar (no client classes in it), so
+# the derive below checks those rows against these bytes instead. Same
+# offline rule as every other fetch above.
+CLIENT_PIN_URL="$(sed -n 's/^URL=//p' tools/autoplay/client-pin.txt)"
+CLIENT_PIN_SHA1="$(sed -n 's/^SHA1=//p' tools/autoplay/client-pin.txt)"
+[ -n "$CLIENT_PIN_URL" ] && [ -n "$CLIENT_PIN_SHA1" ] \
+  || { echo "FAIL e3-live : malformed tools/autoplay/client-pin.txt (want URL= + SHA1=)"; exit 1; }
+MCCLIENT="$E3_DIR/vanilla-client.jar"
+if [ ! -f "$MCCLIENT" ] || ! echo "$CLIENT_PIN_SHA1  $MCCLIENT" | sha1sum -c - >/dev/null 2>&1; then
+  if [ "${E3_OFFLINE:-}" = "1" ]; then
+    echo "FAIL e3-live : offline and vanilla client absent ($MCCLIENT)"
+    exit 1
+  fi
+  echo "note e3-live : fetching pinned vanilla client (network once, $CLIENT_PIN_SHA1)"
+  rm -f "$MCCLIENT"
+  curl -sL -o "$MCCLIENT" "$CLIENT_PIN_URL" \
+    || { echo "FAIL e3-live : vanilla client download failed"; exit 1; }
+  echo "$CLIENT_PIN_SHA1  $MCCLIENT" | sha1sum -c - >/dev/null 2>&1 \
+    || { echo "FAIL e3-live : vanilla client sha1 drift (want $CLIENT_PIN_SHA1, never silent upgrade)"; exit 1; }
+fi
+echo "ok e3-live : vanilla client pinned ($CLIENT_PIN_SHA1)"
 echo "ok e3-live : server provisioned (pins verified)"
 
 # 2. Derive the narrow MCP->SRG map from pinned bytes (no srg-mcp.srg on
-#    1.16.5): joined.tsrg gives obf<->SRG per class, the notch server jar
-#    disambiguates overloads and static-ness via javap (exactly-one assert
+#    1.16.5): joined.tsrg gives obf<->SRG per class, the notch jars
+#    disambiguate overloads and static-ness via javap (exactly-one assert
 #    per member, loud otherwise), and the MCP snapshot locks SRG<->MCP
-#    names. The map covers every vanilla member our forge/ bytecode
+#    names. Server classes verify against the notch server jar;
+#    client-only owners (net/minecraft/client/*, com/mojang/*, plus
+#    Matrix4f whose write() ships client-only — measured: zero
+#    FloatBuffer members on the server bytes) verify against the pinned
+#    vanilla client jar above (1122 split, never defaulted). The map covers every vanilla member our forge/ bytecode
 #    references (verified by constant-pool scan at E3 time:
 #    getDefaultState, setBlockState, getDimensionKey, OVERWORLD, plus the
 #    registration tranche: getStateId, Properties.create,
@@ -182,18 +211,25 @@ echo "ok e3-live : server provisioned (pins verified)"
 #    decisions/SPAWN.md): EntityType$Builder/create/size/trackingRange/
 #    build. EntityClassification/CREATURE needs no row (enum constants
 #    ship MCP-named in joined.tsrg — runtime name identical, passthrough
-#    by construction like Forge classes); client refs (PigRenderer) and
-#    Forge refs (ENTITIES, RenderingRegistry, DistExecutor) pass the
-#    server Reobf untouched (unmapped refs pass through — same split as
-#    the 1122 custom entity tranche, client link measured at live time).
+#    by construction like Forge classes); Forge refs (ENTITIES,
+#    RenderingRegistry, DistExecutor) pass the server Reobf untouched
+#    (unmapped refs pass through — same split as the 1122 custom entity
+#    tranche, client link measured at live time).
+#    Plus the renderer tranche (hub decisions/MATOU_MODEL.md +
+#    GL_INSTANCING_ADAPTER.md): Entity/prevPosX/prevPosY/prevPosZ/
+#    rotationYaw/rotationPitch, Minecraft/getInstance/world/
+#    getRenderViewEntity, ClientWorld/getAllEntities,
+#    MatrixStack/getLast, MatrixStack$Entry/getMatrix, Matrix4f/write —
+#    client-only rows verified against the pinned vanilla client jar
+#    above, every row (and only it) pinned below.
 #    The snapshot lock is load-bearing, not documentary: World carries
 #    three same-type static RegistryKey fields (OVERWORLD, THE_NETHER,
 #    THE_END), so descriptor + static-ness alone cannot pick OVERWORLD —
 #    the field resolves snapshot-first (SRG name), then tsrg + javap
 #    confirm (obf owner, static, RegistryKey type).
-python3 - "$E3_DIR/mcp_config-1.16.5-20210115.111550.zip" "$E3_DIR/mcp_snapshot-20210309-1.16.5.zip" "$MCSERV" "$J8/javap" "$E3_DIR/srg-narrow.srg" <<'EOF'
+python3 - "$E3_DIR/mcp_config-1.16.5-20210115.111550.zip" "$E3_DIR/mcp_snapshot-20210309-1.16.5.zip" "$MCSERV" "$J8/javap" "$E3_DIR/srg-narrow.srg" "$MCCLIENT" <<'EOF'
 import re, subprocess, sys, zipfile
-mcpcfg, snapshot, server, javap, outpath = sys.argv[1:6]
+mcpcfg, snapshot, server, javap, outpath, client = sys.argv[1:7]
 tsrg = zipfile.ZipFile(mcpcfg).read("config/joined.tsrg").decode("utf-8")
 # (owner_srg, srg_name, mcp_name, desc_srg, kind, static?) — the full
 # vanilla surface of forge/ (constant-pool truth, E3 time).
@@ -235,6 +271,29 @@ WANT = [
     # Item registration tranche (hub decisions/ITEM_REGISTRATION.md):
     ("net/minecraft/item/Item$Properties", "func_200917_a", "maxStackSize", "(I)Lnet/minecraft/item/Item$Properties;", "method", False),
     ("net/minecraft/item/Item", "func_150891_b", "getIdFromItem", "(Lnet/minecraft/item/Item;)I", "method", True),
+    # Renderer tranche (hub decisions/MATOU_MODEL.md + GL_INSTANCING_ADAPTER.md):
+    # Entity interpolation + orientation (javap-measured on the notch
+    # server jar like every row above — 1.16.5 keeps no posX fields).
+    ("net/minecraft/entity/Entity", "field_70169_q", "prevPosX", "D", "field", False),
+    ("net/minecraft/entity/Entity", "field_70167_r", "prevPosY", "D", "field", False),
+    ("net/minecraft/entity/Entity", "field_70166_s", "prevPosZ", "D", "field", False),
+    ("net/minecraft/entity/Entity", "field_70177_z", "rotationYaw", "F", "field", False),
+    ("net/minecraft/entity/Entity", "field_70125_A", "rotationPitch", "F", "field", False),
+    # Client-only rows (javap against the pinned vanilla client jar —
+    # the singleton is getInstance, the world field is ClientWorld-typed,
+    # getRenderViewEntity is Entity-typed (the 1710 EntityLivingBase trap
+    # is absent here; the same-sounding func_216773_g lives on
+    # ActiveRenderInfo and is not this), iteration rides
+    # ClientWorld.getAllEntities (the 1.12 loadedEntityList field is
+    # gone; same-sounding func_217369_A is players-only), matrices ride
+    # the event MatrixStack top + projection via Matrix4f.write.
+    ("net/minecraft/client/Minecraft", "func_71410_x", "getInstance", "()Lnet/minecraft/client/Minecraft;", "method", True),
+    ("net/minecraft/client/Minecraft", "field_71441_e", "world", "Lnet/minecraft/client/world/ClientWorld;", "field", False),
+    ("net/minecraft/client/Minecraft", "func_175606_aa", "getRenderViewEntity", "()Lnet/minecraft/entity/Entity;", "method", False),
+    ("net/minecraft/client/world/ClientWorld", "func_217416_b", "getAllEntities", "()Ljava/lang/Iterable;", "method", False),
+    ("com/mojang/blaze3d/matrix/MatrixStack", "func_227866_c_", "getLast", "()Lcom/mojang/blaze3d/matrix/MatrixStack$Entry;", "method", False),
+    ("com/mojang/blaze3d/matrix/MatrixStack$Entry", "func_227870_a_", "getMatrix", "()Lnet/minecraft/util/math/vector/Matrix4f;", "method", False),
+    ("net/minecraft/util/math/vector/Matrix4f", "func_195879_b", "write", "(Ljava/nio/FloatBuffer;)V", "method", False),
 ]
 z = zipfile.ZipFile(snapshot)
 mcpnames = {}
@@ -245,7 +304,7 @@ for row in z.read("fields.csv").decode("utf-8").splitlines()[1:]:
 for owner, srg, mcp, desc, kind, want_static in WANT:
     assert mcpnames.get(srg) == mcp, \
         "E_SRG_DERIVE:snapshot <%s> is <%s>, want <%s>" % (srg, mcpnames.get(srg), mcp)
-print("ok e3-live : snapshot names confirm 36/36")
+print("ok e3-live : snapshot names confirm 48/48")
 srg2obf, classes = {}, {}
 cur = None
 for raw in tsrg.splitlines():
@@ -275,9 +334,11 @@ def obf_ftype(d):
         return PRIM[d]
     return obf_desc(d)[1:-1]
 
-def javap_flags(cls):
-    # -> {(name, descriptor-or-F:type): is_static} from the notch server jar.
-    out = subprocess.check_output([javap, "-p", "-s", "-cp", server, cls]).decode()
+def javap_flags(cls, jar):
+    # -> {(name, descriptor-or-F:type): is_static} from the notch jar
+    # holding the class (server jar, or the pinned client jar for
+    # client-only owners — chosen per row below, never defaulted).
+    out = subprocess.check_output([javap, "-p", "-s", "-cp", jar, cls]).decode()
     res, name, static = {}, None, False
     for l in out.splitlines():
         s = l.strip()
@@ -310,8 +371,16 @@ for row in WANT:
     # pinned bytes fails loud).
     anchor = srg
     obf_owner = srg2obf[owner]
+    # Client classes live in the client jar only (plus Matrix4f, whose
+    # write() the server bytes lack — measured) — every other owner in
+    # the server jar. No default: a future package outside both fails at
+    # javap loudly (check_output raises), never maps against the wrong
+    # bytes silently.
+    jar = client if (owner.startswith("net/minecraft/client/")
+            or owner.startswith("com/mojang/")
+            or owner == "net/minecraft/util/math/vector/Matrix4f") else server
     members = classes[owner]
-    flags = javap_flags(obf_owner)
+    flags = javap_flags(obf_owner, jar)
     if kind == "method":
         od = obf_desc(desc)
         cands = [(m[0], m[2]) for m in members if len(m) == 3 and m[1] == od]
@@ -330,7 +399,7 @@ for row in WANT:
         assert flags.get((tm[0][0], "F:" + ftype_obf)) == want_static, \
             "E_SRG_DERIVE:javap mismatch field <%s %s>" % (owner, srg)
         lines.append("FD: %s/%s %s/%s" % (owner, tm[0][1], owner, mcp))
-assert len(lines) == 36, "E_SRG_DERIVE:want 36 lines, got %d" % len(lines)
+assert len(lines) == 48, "E_SRG_DERIVE:want 48 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok e3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -381,8 +450,29 @@ pin_method "net/minecraft/entity/EntityType\$Builder/build" "(Ljava/lang/String;
 pin_method "net/minecraft/entity/ai/attributes/AttributeModifierMap\$MutableAttribute/create" "()Lnet/minecraft/entity/ai/attributes/AttributeModifierMap;"
 pin_method "net/minecraft/item/Item\$Properties/maxStackSize" "(I)Lnet/minecraft/item/Item\$Properties;"
 pin_method "net/minecraft/item/Item/getIdFromItem" "(Lnet/minecraft/item/Item;)I"
-[ "$(grep -c . "$SRG_NARROW")" = "36" ] \
-  || { echo "FAIL e3-live : narrow map drift (want 36 lines)"; exit 1; }
+# Renderer tranche (hub decisions/MATOU_MODEL.md + GL_INSTANCING_ADAPTER.md):
+# every net/minecraft/* + com/mojang/* member the client-only
+# InstancedMeshRenderer touches. Anchors are snapshot+tsrg+javap-derived
+# above (same measure discipline — never recalled): getInstance is the
+# static func_71410_x, world is the ClientWorld-typed field_71441_e,
+# getRenderViewEntity is func_175606_aa (a method here, Entity-typed),
+# iteration rides ClientWorld.getAllEntities (func_217416_b), matrices
+# ride MatrixStack.getLast/getMatrix/Matrix4f.write, interpolation rides
+# the prevPos + rotation fields.
+pin_field "net/minecraft/entity/Entity/prevPosX"
+pin_field "net/minecraft/entity/Entity/prevPosY"
+pin_field "net/minecraft/entity/Entity/prevPosZ"
+pin_field "net/minecraft/entity/Entity/rotationYaw"
+pin_field "net/minecraft/entity/Entity/rotationPitch"
+pin_method "net/minecraft/client/Minecraft/getInstance" "()Lnet/minecraft/client/Minecraft;"
+pin_field "net/minecraft/client/Minecraft/world"
+pin_method "net/minecraft/client/Minecraft/getRenderViewEntity" "()Lnet/minecraft/entity/Entity;"
+pin_method "net/minecraft/client/world/ClientWorld/getAllEntities" "()Ljava/lang/Iterable;"
+pin_method "com/mojang/blaze3d/matrix/MatrixStack/getLast" "()Lcom/mojang/blaze3d/matrix/MatrixStack\$Entry;"
+pin_method "com/mojang/blaze3d/matrix/MatrixStack\$Entry/getMatrix" "()Lnet/minecraft/util/math/vector/Matrix4f;"
+pin_method "net/minecraft/util/math/vector/Matrix4f/write" "(Ljava/nio/FloatBuffer;)V"
+[ "$(grep -c . "$SRG_NARROW")" = "48" ] \
+  || { echo "FAIL e3-live : narrow map drift (want 48 lines)"; exit 1; }
 echo "ok e3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed Forge member against the provisioned jars. Forge
@@ -436,6 +526,14 @@ pin_uni 'net.minecraftforge.registries.ForgeRegistries' 'ENTITIES'
 pin_uni 'net.minecraftforge.fml.DistExecutor' 'runWhenOn('
 pin_uni 'net.minecraftforge.fml.client.registry.RenderingRegistry' 'registerEntityRenderingHandler('
 pin_uni 'net.minecraftforge.fml.client.registry.IRenderFactory' 'createRenderFor('
+# Renderer tranche (hub decisions/GL_INSTANCING_ADAPTER.md): the client
+# frame event the instanced overlay subscribes to (Forge-added, never
+# obfuscated — presence is the pin, same as every row above; 1.16.5
+# carries the MatrixStack whose top the renderer uploads, measured via
+# javap on this same universal).
+pin_uni 'net.minecraftforge.client.event.RenderWorldLastEvent' 'getPartialTicks('
+pin_uni 'net.minecraftforge.client.event.RenderWorldLastEvent' 'getMatrixStack('
+pin_uni 'net.minecraftforge.client.event.RenderWorldLastEvent' 'getProjectionMatrix('
 # Erased descriptor lock: the real getValue erases V to
 # IForgeRegistryEntry, not Object — an unbounded stub would compile and
 # die live with NoSuchMethodError (found live in E3). Refuse the drift
@@ -526,8 +624,11 @@ cp -r "$BLD/forge/"* "$BLD/bridgemod/"
 # Stubs are compile-only: they must never ship (a fake Block on the
 # runtime classpath would shadow vanilla). Refuse loudly if leaked.
 # (mods.toml ships from forge/src, not the stub tree, so it survives this.)
-rm -rf "$BLD/bridgemod/net" "$BLD/bridgemod/META-INF"
-if [ -e "$BLD/bridgemod/net" ]; then
+# The renderer tranche adds org/lwjgl/*C and com/mojang/* stubs beside the
+# net/* ones (same strip as the 1122 visual tranche — a fake GL11C or
+# MatrixStack on the runtime classpath would shadow the real classes).
+rm -rf "$BLD/bridgemod/net" "$BLD/bridgemod/org" "$BLD/bridgemod/com" "$BLD/bridgemod/META-INF"
+if [ -e "$BLD/bridgemod/net" ] || [ -e "$BLD/bridgemod/org" ] || [ -e "$BLD/bridgemod/com" ]; then
   echo "FAIL e3-live : stub leak into mod jar"
   exit 1
 fi
@@ -542,6 +643,113 @@ cp "$BLD/modstoml/META-INF/mods.toml" "$BLD/bridgemod/META-INF/mods.toml"
 touch -h -d "@$EPOCH" "$BLD/bridgemod/META-INF/mods.toml"
 mkjar "$BLD/jars/matoubridge.jar" "$BLD/bridgemod"
 echo "ok e3-live : jars built (VERSION=$VERSION)"
+
+# 3b. Narrow-map coverage: every net/minecraft/* + com/mojang/* member
+#     the built MCP jar references must resolve in the derived map. Reobf
+#     passes unmapped names through silently, so an uncovered ref dies
+#     linking live (the 1122 visual tranche found the first
+#     RenderWorldLastEvent crashing on unmapped getMinecraft — the map
+#     covered server refs only, and the step-2 comment claiming full
+#     coverage had no check behind it). The walk mirrors Reobf.walk
+#     exactly (in-jar superclass chain, fields by name): <init>/<clinit>
+#     never rename, Forge/LWJGL owners pass through by design, so neither
+#     is asserted. SRG-spelled refs (func_*/field_*) pass through to
+#     identical runtime names by construction (MCP names never match that
+#     shape), so only MCP-spelled refs are asserted. ALLOW is Forge-added
+#     runtime-final (MCP name at runtime).
+python3 - "$BLD/jars/matoubridge.jar" "$SRG_NARROW" <<'EOF'
+import re, struct, sys, zipfile
+jar, mapf = sys.argv[1:3]
+methods, fields = set(), set()
+for raw in open(mapf):
+    t = raw.split()
+    if not t:
+        continue
+    if t[0] == "MD:":
+        own, name = t[3].rsplit("/", 1)
+        methods.add((own, name, t[4]))
+    elif t[0] == "FD:":
+        own, name = t[2].rsplit("/", 1)
+        fields.add((own, name))
+ALLOW = {
+    ("net/minecraft/world/WorldProvider", "getDimension"),
+    ("net/minecraft/block/Block", "setRegistryName"),
+    ("net/minecraft/item/Item", "setRegistryName"),
+}
+SRG_SPELLED = re.compile(r"^(func_|field_)\d+_")
+def u(pool, i):
+    return pool[i][1].decode("utf-8")
+def parse(data):
+    assert data[:4] == b"\xca\xfe\xba\xbe", "E_MAP_COVER:not a class"
+    n = struct.unpack(">H", data[8:10])[0]
+    pool = [None] * n
+    i, p = 1, 10
+    while i < n:
+        tag = data[p]
+        p += 1
+        if tag == 1:
+            ln = struct.unpack(">H", data[p:p + 2])[0]
+            pool[i] = (tag, data[p + 2:p + 2 + ln])
+            p += 2 + ln
+        elif tag in (7, 8, 16, 19, 20):
+            pool[i] = (tag, struct.unpack(">H", data[p:p + 2])[0])
+            p += 2
+        elif tag in (9, 10, 11, 12, 17, 18):
+            pool[i] = (tag, struct.unpack(">H", data[p:p + 2])[0],
+                       struct.unpack(">H", data[p + 2:p + 4])[0])
+            p += 4
+        elif tag == 15:
+            p += 3
+        elif tag in (3, 4):
+            p += 4
+        elif tag in (5, 6):
+            p += 8
+            i += 1
+        else:
+            raise AssertionError("E_MAP_COVER:bad tag %d" % tag)
+        i += 1
+    this_idx = struct.unpack(">H", data[p + 2:p + 4])[0]
+    super_idx = struct.unpack(">H", data[p + 4:p + 6])[0]
+    this_name = u(pool, pool[this_idx][1])
+    super_name = u(pool, pool[super_idx][1]) if super_idx else None
+    refs = []
+    for e in pool[1:]:
+        if e is None or e[0] not in (9, 10, 11):
+            continue
+        owner = u(pool, pool[e[1]][1])
+        _, ni, di = pool[e[2]]
+        refs.append((owner, u(pool, ni), u(pool, di), e[0] == 9))
+    return this_name, super_name, refs
+z = zipfile.ZipFile(jar)
+supers, allrefs = {}, []
+for info in z.infolist():
+    if not info.filename.endswith(".class"):
+        continue
+    this_name, super_name, refs = parse(z.read(info.filename))
+    supers[this_name] = super_name
+    allrefs.extend(refs)
+missing = []
+for owner, name, desc, is_field in allrefs:
+    if not (owner.startswith("net/minecraft/") or owner.startswith("com/mojang/")):
+        continue
+    if name in ("<init>", "<clinit>") or SRG_SPELLED.match(name):
+        continue
+    o, hit = owner, False
+    while o is not None:
+        if is_field:
+            if (o, name) in fields:
+                hit = True
+                break
+        elif (o, name, desc) in methods:
+            hit = True
+            break
+        o = supers.get(o)
+    if not hit and (owner, name) not in ALLOW:
+        missing.append("%s %s %s %s" % ("FD" if is_field else "MD", owner, name, desc))
+assert not missing, "E_MAP_COVER:unmapped vanilla refs:\n%s" % "\n".join(sorted(set(missing)))
+print("ok e3-live : narrow map covers forge refs")
+EOF
+echo "ok e3-live : narrow map covers forge refs"
 
 # 4. Reobfuscate MCP-named refs to SRG (ForgeGradle reobf equivalent:
 #    runtime vanilla only declares SRG names, so un-reobfed jars die with
@@ -619,8 +827,9 @@ if [ "${BUILD_ONLY:-}" = "1" ]; then
   cp "$BLD/jars/matou-minimap.jar" "dist/matou-minimap-$VERSION.jar"
   cp "$BLD/jars/matoubridge-reobf.jar" "dist/matoubridge-$VERSION.jar"
   cp ../example1/content/owned.matou ../example1/content/additive.matou ../example1/content/structure.matou ../example1/content/vein.matou dist/matou-content/
+  cp tools/live/my_beast.geo.json dist/my_beast.geo.json
   printf '# Copy to <server>/config/matoubridge/packs.cfg and replace <SERVER>.\n# Wire y=63 keeps plane cells on their own slice, off the structure slices (64..65).\n# The wire block is the registered custom ore (DeferredRegister queues example1:my_ore from owned.matou, the fill lands before setup binds resolve it); aliases stay vanilla stone.\n# Vein clusters land on the BASE_Y=60 band (slices 60..61) as the registered ore via the veinblock alias.\nfr.iamacat.example1.ExamplePack 63 example1:my_ore ownedFile=<SERVER>/matou-content/owned.matou scatterFile=<SERVER>/matou-content/additive.matou structureFile=<SERVER>/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone veinFile=<SERVER>/matou-content/vein.matou veinblock.example1.content:my_ore=example1:my_ore\n' > dist/packs.cfg.example
-  (cd dist && sha256sum "matou-spi-$VERSION.jar" "matou-example1-$VERSION.jar" "matou-minimap-$VERSION.jar" "matoubridge-$VERSION.jar" matou-content/owned.matou matou-content/additive.matou matou-content/structure.matou matou-content/vein.matou packs.cfg.example > SHA256SUMS.txt)
+  (cd dist && sha256sum "matou-spi-$VERSION.jar" "matou-example1-$VERSION.jar" "matou-minimap-$VERSION.jar" "matoubridge-$VERSION.jar" matou-content/owned.matou matou-content/additive.matou matou-content/structure.matou matou-content/vein.matou packs.cfg.example my_beast.geo.json > SHA256SUMS.txt)
   (cd dist && sha256sum -c SHA256SUMS.txt)
   echo "ok r2-release : dist/ assembled (VERSION=$VERSION)"
   exit 0
@@ -640,6 +849,10 @@ rm -rf "$SERV/matou-content" && cp -r ../example1/content "$SERV/matou-content"
 # resolve it). Vein clusters land on their own band (BASE_Y=60, slices
 # 60..61) as the registered ore through the veinblock alias.
 printf 'fr.iamacat.example1.ExamplePack 63 example1:my_ore ownedFile=%s/matou-content/owned.matou scatterFile=%s/matou-content/additive.matou structureFile=%s/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone veinFile=%s/matou-content/vein.matou veinblock.example1.content:my_ore=example1:my_ore\n' "$SERV" "$SERV" "$SERV" "$SERV" > "$SERV/config/matoubridge/packs.cfg"
+# Beast shape: the shipped Blockbench geometry the renderer bakes and the
+# hitboxes derive from (hub decisions/MATOU_MODEL.md). Deployed beside
+# packs.cfg, operator-replaceable like it.
+cp tools/live/my_beast.geo.json "$SERV/config/matoubridge/my_beast.geo.json"
 echo "eula=true" > "$SERV/eula.txt"
 printf 'online-mode=false\nlevel-type=FLAT\ngamemode=1\ndifficulty=0\nmotd=E3 live proof\nmax-tick-time=-1\n' > "$SERV/server.properties"
 rm -rf "$SERV/world" "$SERV/logs"
@@ -654,9 +867,9 @@ echo "ok e3-live : server ran ($BOOT_SECS s)"
 #    the rolling server log — Forge splits output across both).
 LOGS="$SERV/boot-e3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|Encountered an unexpected exception" $LOGS; then
+if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|Encountered an unexpected exception" $LOGS; then
   echo "FAIL e3-live : runtime refusal (see $SERV/boot-e3.log)"
-  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|Caused by" $LOGS
+  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|Caused by" $LOGS
   exit 1
 fi
 grep -a -q "matoubridge" $LOGS \

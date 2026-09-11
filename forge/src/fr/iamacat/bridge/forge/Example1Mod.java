@@ -336,6 +336,7 @@ public final class Example1Mod {
         IRenderFactory<MatouEntity> pigs = PigRenderer::new;
         RenderingRegistry.registerEntityRenderingHandler(
                 BEAST.get(), pigs);
+        InstancedMeshRenderer.initClient();
     }
 
     /**

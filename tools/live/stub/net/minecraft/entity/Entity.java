@@ -29,6 +29,22 @@ public class Entity {
 
     public boolean removed;
 
+    /**
+     * Renderer shape (hub decisions/GL_INSTANCING_ADAPTER.md): frame
+     * interpolation rides the previous-tick origin plus the current
+     * getters (1.16.5 keeps no {@code posX} fields — the getters are
+     * already pinned, these fields were measured the same way):
+     * {@code prevPosX/Y/Z} are {@code field_70169_q/70167_r/70166_s},
+     * {@code rotationYaw/Pitch} are {@code field_70177_z/70125_A} (all
+     * public, snapshot 20210309). Pinned by tools/run-live.sh (narrow
+     * map) — drift fails loudly.
+     */
+    public double prevPosX;
+    public double prevPosY;
+    public double prevPosZ;
+    public float rotationYaw;
+    public float rotationPitch;
+
     public double getPosX() {
         return 0;
     }
