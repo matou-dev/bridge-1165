@@ -5,6 +5,7 @@ import fr.iamacat.spi.hit.BoneBox;
 import fr.iamacat.spi.hit.Hittable;
 import java.util.List;
 import java.util.Map;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.passive.PigEntity;
 import net.minecraft.world.World;
@@ -52,7 +53,15 @@ public class MatouEntity extends PigEntity implements Hittable {
 
     @Override
     public List<BoneBox> hitBoxes() {
-        return BeastModel.cached().boxesAt(getPosX(), getPosY(), getPosZ());
+        // Owner discipline (same class as the 1122 NoSuchFieldError posX,
+        // fixed there in 840507c, hub decisions/LOOT.md): a bare
+        // getPosX() call owns MatouEntity, whose reobf walk dies at the
+        // vanilla PigEntity link — NoSuchMethodError on the first struck
+        // hurt live (measured 2026-09-11 on the 1165 combat leg).
+        // Inherited vanilla members go through the declaring stub type
+        // (Entity), never the beast.
+        Entity self = this;
+        return BeastModel.cached().boxesAt(self.getPosX(), self.getPosY(), self.getPosZ());
     }
 
     @Override
