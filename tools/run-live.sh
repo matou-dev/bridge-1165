@@ -44,6 +44,25 @@
 # equivalent). Forge classes are never obfuscated and pass through.
 set -eu
 cd "$(dirname "$0")/.."
+# Shared harness steps (hub SSOT, thin version wrapper — hub
+# decisions/LIVE_SHELL_COMMON.md): sibling-absent fails loud, same shim
+# discipline as tools/run-client.sh.
+[ -f ../hub/tools/live-common.sh ] \
+  || { echo "FAIL e3-live : hub sibling absent (clone hub next to bridge-1165 — live steps source ../hub/tools/live-common.sh)"; exit 1; }
+[ -f ../hub/tools/live-derive.sh ] \
+  || { echo "FAIL e3-live : hub sibling absent (clone hub next to bridge-1165 — derive steps source ../hub/tools/live-derive.sh)"; exit 1; }
+# shellcheck disable=SC1091
+. ../hub/tools/live-common.sh
+# shellcheck disable=SC1091
+. ../hub/tools/live-derive.sh
+live_init "e3-live"
+# Era-bound adapters: the hub libs own the mechanics; these bind the
+# caller-owned map/jars so every pin/jar call site below stays byte-identical.
+pin_method() { live_pin_method "$SRG_NARROW" "$@"; }
+pin_field() { live_pin_field "$SRG_NARROW" "$@"; }
+pin_uni() { live_pin_uni "$J8" "$UNI" "$@"; }
+mkjar() { live_mkjar "$1" "$2" "$BLD/MANIFEST.MF" "$J8/jar" "$EPOCH"; }
+normjar() { live_normjar "$1" "$EPOCH"; }
 E3_DIR="${E3_DIR:-${TMPDIR:-/tmp}/matou-e3-live}"
 JAVA8_HOME="${JAVA8_HOME:-/usr/lib/jvm/java-8-openjdk}"
 FORGE_URL="${FORGE_URL:-https://maven.minecraftforge.net/net/minecraftforge/forge/1.16.5-36.2.42/forge-1.16.5-36.2.42-installer.jar}"
@@ -89,36 +108,12 @@ fi
 mkdir -p "$E3_DIR"
 SERV="$E3_DIR/server"
 mkdir -p "$SERV"
-# 1a. E3_DIR preflight: docker runs leave root-owned leftovers (build/,
-#     world/, logs/, matou-content/) that a host run cannot clear file by
-#     file (rm needs write on the root-owned parent). Fail fast with the fix
-#     instead of dying mid-run or reusing stale state silently.
-if [ -e "$E3_DIR" ]; then
-  BAD_OWNER=$(find "$E3_DIR" ! -user "$(id -un)" -print -quit 2>/dev/null || true)
-  if [ -n "$BAD_OWNER" ]; then
-    echo "FAIL e3-live : E3_DIR=<$E3_DIR> has non-owned leftovers (e.g. <$BAD_OWNER> from a docker run as root)"
-    echo "fix: sudo rm -rf <$E3_DIR/build> <$E3_DIR/server/world> <$E3_DIR/server/logs> <$E3_DIR/server/matou-content> OR E3_DIR=/tmp/matou-e3-clean $0"
-    exit 1
-  fi
-  if [ ! -w "$E3_DIR" ]; then
-    echo "FAIL e3-live : E3_DIR=<$E3_DIR> not writable (fix ownership or point E3_DIR at a user-owned dir)"
-    exit 1
-  fi
-fi
-if [ ! -f "$E3_DIR/forge-installer.jar" ]; then
-  if [ "${E3_OFFLINE:-}" = "1" ]; then
-    echo "FAIL e3-live : offline and installer absent ($E3_DIR/forge-installer.jar)"
-    exit 1
-  fi
-  curl -sL -o "$E3_DIR/forge-installer.jar" "$FORGE_URL" \
-    || { echo "FAIL e3-live : installer download"; exit 1; }
-fi
-echo "$INSTALLER_SHA1  $E3_DIR/forge-installer.jar" | sha1sum -c - >/dev/null 2>&1 \
-  || { echo "FAIL e3-live : installer sha1 drift (want $INSTALLER_SHA1)"; exit 1; }
+# 1a. E3_DIR preflight (docker root-owned leftovers fail fast, loudly).
+live_preflight_dir "E3_DIR" "$E3_DIR"
+live_fetch "$E3_DIR/forge-installer.jar" "$FORGE_URL" "$INSTALLER_SHA1" "${E3_OFFLINE:-0}"
 UNI="$SERV/libraries/net/minecraftforge/forge/1.16.5-36.2.42/forge-1.16.5-36.2.42-universal.jar"
 if [ ! -f "$UNI" ]; then
-  (cd "$SERV" && "$J8/java" -jar "$E3_DIR/forge-installer.jar" --installServer >/dev/null 2>&1) \
-    || { echo "FAIL e3-live : --installServer"; exit 1; }
+  live_install_server "$SERV" "$E3_DIR/forge-installer.jar" "$J8"
 fi
 echo "$UNIVERSAL_SHA1  $UNI" | sha1sum -c - >/dev/null 2>&1 \
   || { echo "FAIL e3-live : universal sha1 drift (want $UNIVERSAL_SHA1)"; exit 1; }
@@ -140,26 +135,8 @@ EVENTBUS=$(find "$SERV/libraries/net/minecraftforge/eventbus" -name "eventbus-4.
 [ -n "$EVENTBUS" ] || { echo "FAIL e3-live : eventbus 4.0.0 missing from server libs"; exit 1; }
 FORGESPI=$(find "$SERV/libraries/net/minecraftforge/forgespi" -name "forgespi-*.jar" | head -n 1)
 [ -n "$FORGESPI" ] || { echo "FAIL e3-live : forgespi missing from server libs"; exit 1; }
-if [ ! -f "$E3_DIR/mcp_config-1.16.5-20210115.111550.zip" ]; then
-  if [ "${E3_OFFLINE:-}" = "1" ]; then
-    echo "FAIL e3-live : offline and MCP config absent ($E3_DIR/mcp_config-1.16.5-20210115.111550.zip)"
-    exit 1
-  fi
-  curl -sL -o "$E3_DIR/mcp_config-1.16.5-20210115.111550.zip" "$MCP_CONFIG_URL" \
-    || { echo "FAIL e3-live : MCP config download"; exit 1; }
-fi
-echo "$MCP_CONFIG_SHA1  $E3_DIR/mcp_config-1.16.5-20210115.111550.zip" | sha1sum -c - >/dev/null 2>&1 \
-  || { echo "FAIL e3-live : MCP config sha1 drift (want $MCP_CONFIG_SHA1)"; exit 1; }
-if [ ! -f "$E3_DIR/mcp_snapshot-20210309-1.16.5.zip" ]; then
-  if [ "${E3_OFFLINE:-}" = "1" ]; then
-    echo "FAIL e3-live : offline and MCP snapshot absent ($E3_DIR/mcp_snapshot-20210309-1.16.5.zip)"
-    exit 1
-  fi
-  curl -sL -o "$E3_DIR/mcp_snapshot-20210309-1.16.5.zip" "$MCP_SNAPSHOT_URL" \
-    || { echo "FAIL e3-live : MCP snapshot download"; exit 1; }
-fi
-echo "$MCP_SNAPSHOT_SHA1  $E3_DIR/mcp_snapshot-20210309-1.16.5.zip" | sha1sum -c - >/dev/null 2>&1 \
-  || { echo "FAIL e3-live : MCP snapshot sha1 drift (want $MCP_SNAPSHOT_SHA1)"; exit 1; }
+live_fetch "$E3_DIR/mcp_config-1.16.5-20210115.111550.zip" "$MCP_CONFIG_URL" "$MCP_CONFIG_SHA1" "${E3_OFFLINE:-0}"
+live_fetch "$E3_DIR/mcp_snapshot-20210309-1.16.5.zip" "$MCP_SNAPSHOT_URL" "$MCP_SNAPSHOT_SHA1" "${E3_OFFLINE:-0}"
 # Pinned vanilla client (tools/autoplay/client-pin.txt — the AUTOPLAY
 # companion derive already trusts it; this script reuses the same bytes,
 # never its own pin): client-only vanilla members (net/minecraft/client/*,
@@ -227,193 +204,12 @@ echo "ok e3-live : server provisioned (pins verified)"
 #    THE_END), so descriptor + static-ness alone cannot pick OVERWORLD —
 #    the field resolves snapshot-first (SRG name), then tsrg + javap
 #    confirm (obf owner, static, RegistryKey type).
-python3 - "$E3_DIR/mcp_config-1.16.5-20210115.111550.zip" "$E3_DIR/mcp_snapshot-20210309-1.16.5.zip" "$MCSERV" "$J8/javap" "$E3_DIR/srg-narrow.srg" "$MCCLIENT" <<'EOF'
-import re, subprocess, sys, zipfile
-mcpcfg, snapshot, server, javap, outpath, client = sys.argv[1:7]
-tsrg = zipfile.ZipFile(mcpcfg).read("config/joined.tsrg").decode("utf-8")
-# (owner_srg, srg_name, mcp_name, desc_srg, kind, static?) — the full
-# vanilla surface of forge/ (constant-pool truth, E3 time).
-WANT = [
-    ("net/minecraft/block/Block", "func_176223_P", "getDefaultState", "()Lnet/minecraft/block/BlockState;", "method", False),
-    ("net/minecraft/world/World", "func_175656_a", "setBlockState", "(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;)Z", "method", False),
-    ("net/minecraft/world/World", "func_234923_W_", "getDimensionKey", "()Lnet/minecraft/util/RegistryKey;", "method", False),
-    ("net/minecraft/world/World", "field_234918_g_", "OVERWORLD", "Lnet/minecraft/util/RegistryKey;", "field", True),
-    ("net/minecraft/block/Block", "func_196246_j", "getStateId", "(Lnet/minecraft/block/BlockState;)I", "method", True),
-    ("net/minecraft/block/AbstractBlock$Properties", "func_200945_a", "create", "(Lnet/minecraft/block/material/Material;)Lnet/minecraft/block/AbstractBlock$Properties;", "method", True),
-    ("net/minecraft/block/AbstractBlock$Properties", "func_200943_b", "hardnessAndResistance", "(F)Lnet/minecraft/block/AbstractBlock$Properties;", "method", False),
-    ("net/minecraft/block/material/Material", "field_151576_e", "ROCK", "Lnet/minecraft/block/material/Material;", "field", True),
-    ("net/minecraft/entity/Entity", "field_70170_p", "world", "Lnet/minecraft/world/World;", "field", False),
-    ("net/minecraft/entity/Entity", "func_226277_ct_", "getPosX", "()D", "method", False),
-    ("net/minecraft/entity/Entity", "func_226278_cu_", "getPosY", "()D", "method", False),
-    ("net/minecraft/entity/Entity", "func_226281_cx_", "getPosZ", "()D", "method", False),
-    ("net/minecraft/world/World", "field_72995_K", "isRemote", "Z", "field", False),
-    ("net/minecraft/world/server/ServerWorld", "func_217376_c", "addEntity", "(Lnet/minecraft/entity/Entity;)Z", "method", False),
-    ("net/minecraft/item/Items", "field_151045_i", "DIAMOND", "Lnet/minecraft/item/Item;", "field", True),
-    ("net/minecraft/util/math/vector/Vector3i", "func_177958_n", "getX", "()I", "method", False),
-    ("net/minecraft/util/math/vector/Vector3i", "func_177956_o", "getY", "()I", "method", False),
-    ("net/minecraft/util/math/vector/Vector3i", "func_177952_p", "getZ", "()I", "method", False),
-    ("net/minecraft/block/AbstractBlock$AbstractBlockState", "func_177230_c", "getBlock", "()Lnet/minecraft/block/Block;", "method", False),
-    ("net/minecraft/entity/Entity", "func_145782_y", "getEntityId", "()I", "method", False),
-    ("net/minecraft/entity/Entity", "field_70128_L", "removed", "Z", "field", False),
-    ("net/minecraft/entity/Entity", "func_70080_a", "setPositionAndRotation", "(DDDFF)V", "method", False),
-    ("net/minecraft/world/World", "func_175647_a", "getEntitiesWithinAABB", "(Ljava/lang/Class;Lnet/minecraft/util/math/AxisAlignedBB;Ljava/util/function/Predicate;)Ljava/util/List;", "method", False),
-    ("net/minecraft/entity/LivingEntity", "func_110148_a", "getAttribute", "(Lnet/minecraft/entity/ai/attributes/Attribute;)Lnet/minecraft/entity/ai/attributes/ModifiableAttributeInstance;", "method", False),
-    ("net/minecraft/entity/LivingEntity", "func_110138_aP", "getMaxHealth", "()F", "method", False),
-    ("net/minecraft/entity/LivingEntity", "func_70606_j", "setHealth", "(F)V", "method", False),
-    ("net/minecraft/entity/ai/attributes/ModifiableAttributeInstance", "func_111128_a", "setBaseValue", "(D)V", "method", False),
-    ("net/minecraft/entity/ai/attributes/Attributes", "field_233818_a_", "MAX_HEALTH", "Lnet/minecraft/entity/ai/attributes/Attribute;", "field", True),
-    ("net/minecraft/entity/EntityType", "field_200784_X", "PIG", "Lnet/minecraft/entity/EntityType;", "field", True),
-    ("net/minecraft/entity/EntityType$Builder", "func_220322_a", "create", "(Lnet/minecraft/entity/EntityType$IFactory;Lnet/minecraft/entity/EntityClassification;)Lnet/minecraft/entity/EntityType$Builder;", "method", True),
-    ("net/minecraft/entity/EntityType$Builder", "func_220321_a", "size", "(FF)Lnet/minecraft/entity/EntityType$Builder;", "method", False),
-    ("net/minecraft/entity/EntityType$Builder", "func_233606_a_", "trackingRange", "(I)Lnet/minecraft/entity/EntityType$Builder;", "method", False),
-    ("net/minecraft/entity/EntityType$Builder", "func_206830_a", "build", "(Ljava/lang/String;)Lnet/minecraft/entity/EntityType;", "method", False),
-    ("net/minecraft/entity/ai/attributes/AttributeModifierMap$MutableAttribute", "func_233813_a_", "create", "()Lnet/minecraft/entity/ai/attributes/AttributeModifierMap;", "method", False),
-    # Item registration tranche (hub decisions/ITEM_REGISTRATION.md):
-    ("net/minecraft/item/Item$Properties", "func_200917_a", "maxStackSize", "(I)Lnet/minecraft/item/Item$Properties;", "method", False),
-    ("net/minecraft/item/Item", "func_150891_b", "getIdFromItem", "(Lnet/minecraft/item/Item;)I", "method", True),
-    # Renderer tranche (hub decisions/MATOU_MODEL.md + GL_INSTANCING_ADAPTER.md):
-    # Entity interpolation + orientation (javap-measured on the notch
-    # server jar like every row above — 1.16.5 keeps no posX fields).
-    ("net/minecraft/entity/Entity", "field_70169_q", "prevPosX", "D", "field", False),
-    ("net/minecraft/entity/Entity", "field_70167_r", "prevPosY", "D", "field", False),
-    ("net/minecraft/entity/Entity", "field_70166_s", "prevPosZ", "D", "field", False),
-    ("net/minecraft/entity/Entity", "field_70177_z", "rotationYaw", "F", "field", False),
-    ("net/minecraft/entity/Entity", "field_70125_A", "rotationPitch", "F", "field", False),
-    # Client-only rows (javap against the pinned vanilla client jar —
-    # the singleton is getInstance, the world field is ClientWorld-typed,
-    # getRenderViewEntity is Entity-typed (the 1710 EntityLivingBase trap
-    # is absent here; the same-sounding func_216773_g lives on
-    # ActiveRenderInfo and is not this), iteration rides
-    # ClientWorld.getAllEntities (the 1.12 loadedEntityList field is
-    # gone; same-sounding func_217369_A is players-only), matrices ride
-    # the event MatrixStack top + projection via Matrix4f.write.
-    ("net/minecraft/client/Minecraft", "func_71410_x", "getInstance", "()Lnet/minecraft/client/Minecraft;", "method", True),
-    ("net/minecraft/client/Minecraft", "field_71441_e", "world", "Lnet/minecraft/client/world/ClientWorld;", "field", False),
-    ("net/minecraft/client/Minecraft", "func_175606_aa", "getRenderViewEntity", "()Lnet/minecraft/entity/Entity;", "method", False),
-    ("net/minecraft/client/world/ClientWorld", "func_217416_b", "getAllEntities", "()Ljava/lang/Iterable;", "method", False),
-    ("com/mojang/blaze3d/matrix/MatrixStack", "func_227866_c_", "getLast", "()Lcom/mojang/blaze3d/matrix/MatrixStack$Entry;", "method", False),
-    ("com/mojang/blaze3d/matrix/MatrixStack$Entry", "func_227870_a_", "getMatrix", "()Lnet/minecraft/util/math/vector/Matrix4f;", "method", False),
-    ("net/minecraft/util/math/vector/Matrix4f", "func_195879_b", "write", "(Ljava/nio/FloatBuffer;)V", "method", False),
-]
-z = zipfile.ZipFile(snapshot)
-mcpnames = {}
-for row in z.read("methods.csv").decode("utf-8").splitlines()[1:]:
-    mcpnames[row.split(",")[0]] = row.split(",")[1]
-for row in z.read("fields.csv").decode("utf-8").splitlines()[1:]:
-    mcpnames.setdefault(row.split(",")[0], row.split(",")[1])
-for owner, srg, mcp, desc, kind, want_static in WANT:
-    assert mcpnames.get(srg) == mcp, \
-        "E_SRG_DERIVE:snapshot <%s> is <%s>, want <%s>" % (srg, mcpnames.get(srg), mcp)
-print("ok e3-live : snapshot names confirm 48/48")
-srg2obf, classes = {}, {}
-cur = None
-for raw in tsrg.splitlines():
-    line = raw.strip()
-    if not line or line.startswith("#"):
-        continue
-    if raw[0] in (" ", "\t"):
-        classes.setdefault(cur, []).append(line.split())
-    else:
-        obf, srg = line.split()
-        srg2obf[srg] = obf
-        cur = srg
-
-def obf_desc(d):
-    return re.sub(r"L([^;]+);",
-                  lambda m: "L" + srg2obf.get(m.group(1), m.group(1)) + ";", d)
-
-# javap spells primitive field types by name (boolean, ...), never by
-# descriptor char — the loot tranche pins World/isRemote (Z), so the
-# field-type key maps single-char descriptors (object types keep the
-# obf_desc path above; same shape as the 1122 loot tranche).
-PRIM = {"Z": "boolean", "B": "byte", "C": "char", "D": "double",
-        "F": "float", "I": "int", "J": "long", "S": "short"}
-
-def obf_ftype(d):
-    if d in PRIM:
-        return PRIM[d]
-    return obf_desc(d)[1:-1]
-
-def javap_flags(cls, jar):
-    # -> {(name, descriptor-or-F:type): is_static} from the notch jar
-    # holding the class (server jar, or the pinned client jar for
-    # client-only owners — chosen per row below, never defaulted).
-    out = subprocess.check_output([javap, "-p", "-s", "-cp", jar, cls]).decode()
-    res, name, static = {}, None, False
-    for l in out.splitlines():
-        s = l.strip()
-        if s.startswith("descriptor:"):
-            res[(name, s.split(None, 1)[1])] = static
-        elif s and not s.startswith("Compiled"):
-            m = re.match(r".*\s([\w$<>]+)\(", s)
-            if m:
-                static = bool(re.search(r"\bstatic\b", s.split("(")[0]))
-                name = m.group(1)
-            elif "(" not in s and s.endswith(";") and "{" not in s:
-                # Field type class carries `?` for javap-printed wildcards
-                # (e.g. `ceg$d<aqe<?>>` in AbstractBlock$Properties —
-                # measured, not assumed: the inner class holds a generic
-                # optional field, and the pre-fix class failed loud here).
-                m2 = re.match(r"(?:(.*)\s)?([\w.$\[\]<>, ?]+?)\s+([\w$]+);", s)
-                assert m2, "E_SRG_DERIVE:unparsed javap line <%s> in <%s>" % (s, cls)
-                static = bool(re.search(r"\bstatic\b", m2.group(1) or ""))
-                name = m2.group(3)
-                res[(name, "F:" + re.sub(r"<.*>", "", m2.group(2)))] = static
-    return res
-
-lines = []
-for row in WANT:
-    owner, srg, mcp, desc, kind, want_static = row[:6]
-    # SRG anchor (1122 port lesson): several vanilla members share one
-    # descriptor (here four hardnessAndResistance overloads), so javap
-    # static-ness alone cannot pick — the snapshot SRG name filters
-    # first, tsrg + javap still confirm (an anchor missing from the
-    # pinned bytes fails loud).
-    anchor = srg
-    obf_owner = srg2obf[owner]
-    # Client classes live in the client jar only (plus Matrix4f, whose
-    # write() the server bytes lack — measured) — every other owner in
-    # the server jar. No default: a future package outside both fails at
-    # javap loudly (check_output raises), never maps against the wrong
-    # bytes silently.
-    jar = client if (owner.startswith("net/minecraft/client/")
-            or owner.startswith("com/mojang/")
-            or owner == "net/minecraft/util/math/vector/Matrix4f") else server
-    members = classes[owner]
-    flags = javap_flags(obf_owner, jar)
-    if kind == "method":
-        od = obf_desc(desc)
-        cands = [(m[0], m[2]) for m in members if len(m) == 3 and m[1] == od]
-        assert cands, "E_SRG_DERIVE:no tsrg member <%s %s>" % (owner, mcp)
-        cands = [(n, s) for n, s in cands if s == anchor]
-        assert cands, "E_SRG_DERIVE:no tsrg member <%s %s> (anchor %s absent)" % (owner, mcp, anchor)
-        hits = [(n, s) for n, s in cands if flags.get((n, od)) == want_static]
-        assert len(hits) == 1, "E_SRG_DERIVE:ambiguous <%s %s> %s" % (owner, mcp, hits)
-        assert hits[0][1] == srg, \
-            "E_SRG_DERIVE:srg mismatch <%s %s> got %s want %s" % (owner, mcp, hits[0][1], srg)
-        lines.append("MD: %s/%s %s %s/%s %s" % (owner, hits[0][1], desc, owner, mcp, desc))
-    else:
-        tm = [m for m in members if len(m) == 2 and m[1] == srg]
-        assert len(tm) == 1, "E_SRG_DERIVE:no tsrg field <%s %s>" % (owner, srg)
-        ftype_obf = obf_ftype(desc)
-        assert flags.get((tm[0][0], "F:" + ftype_obf)) == want_static, \
-            "E_SRG_DERIVE:javap mismatch field <%s %s>" % (owner, srg)
-        lines.append("FD: %s/%s %s/%s" % (owner, tm[0][1], owner, mcp))
-assert len(lines) == 48, "E_SRG_DERIVE:want 48 lines, got %d" % len(lines)
-open(outpath, "w").write("\n".join(lines) + "\n")
-print("ok e3-live : narrow SRG derived (%d lines)" % len(lines))
-EOF
+# Mechanics live in hub/tools/live-derive.sh (era 1.16), rows in
+# tools/live/want.tsv — same 48 lines, byte-identical output.
 SRG_NARROW="$E3_DIR/srg-narrow.srg"
+live_derive_mcp_snapshot "$E3_DIR/mcp_config-1.16.5-20210115.111550.zip" "$E3_DIR/mcp_snapshot-20210309-1.16.5.zip" "$MCSERV" "$J8/javap" "$SRG_NARROW" "$MCCLIENT" "tools/live/want.tsv"
 # 2b. Pin every derived line: a derivation the SRG does not confirm is a loud
 #     failure, never a silent default.
-pin_method() {
-  grep -q "^MD: [^ ]* [^ ]* $1 $2\$" "$SRG_NARROW" \
-    || { echo "FAIL e3-live : stub member unpinned <$1 $2>"; exit 1; }
-}
-pin_field() {
-  grep -q "^FD: [^ ]* $1\$" "$SRG_NARROW" \
-    || { echo "FAIL e3-live : stub field unpinned <$1>"; exit 1; }
-}
 pin_method "net/minecraft/block/Block/getDefaultState" "()Lnet/minecraft/block/BlockState;"
 pin_method "net/minecraft/block/Block/getStateId" "(Lnet/minecraft/block/BlockState;)I"
 pin_method "net/minecraft/block/AbstractBlock\$Properties/create" "(Lnet/minecraft/block/material/Material;)Lnet/minecraft/block/AbstractBlock\$Properties;"
@@ -481,10 +277,6 @@ echo "ok e3-live : stubs pinned to derived SRG"
 #     universal, which is why forge/ compiles against stubs, not it.)
 #     FML (LogicalSide, Mod) ships inside the 36.2.42 universal; eventbus
 #     (Event, IEventBus, SubscribeEvent) ships its own 4.0.0 jar.
-pin_uni() {
-  "$J8/javap" -p -cp "$UNI" "$1" 2>/dev/null | grep -q "$2" \
-    || { echo "FAIL e3-live : universal pin unmet <$1 :: $2>"; exit 1; }
-}
 pin_uni 'net.minecraftforge.common.MinecraftForge' 'EVENT_BUS'
 pin_uni 'net.minecraftforge.event.TickEvent' 'side'
 pin_uni 'net.minecraftforge.event.TickEvent' 'phase'
@@ -585,37 +377,6 @@ grep -q "version=\"$VERSION\"" "$BLD/modstoml/META-INF/mods.toml" \
 EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
 printf 'Manifest-Version: 1.0\nImplementation-Version: %s\n' "$VERSION" > "$BLD/MANIFEST.MF"
 find "$BLD/spi" "$BLD/ex1" "$BLD/mini" "$BLD/forge" "$BLD/modstoml" "$BLD/MANIFEST.MF" -exec touch -h -d "@$EPOCH" {} +
-# mkjar: sorted entries, pinned mtimes, VERSION manifest. File lists stay
-# explicit because jar -C . walks in readdir order (not reproducible).
-# normjar then clamps every zip entry timestamp: the JDK 8 jar tool stamps
-# META-INF entries with the wall clock (verified by diff), and Reobf does
-# the same for its output. python3 is already a hard dependency (anvil).
-# Scope: same commit + same toolchain == same bytes (zlib/JDK may vary
-# across machines; use tools/live/Dockerfile to pin the toolchain).
-normjar() {
-  python3 - "$1" "$EPOCH" <<'EOF'
-import sys, zipfile, datetime
-path, epoch = sys.argv[1], int(sys.argv[2])
-dt = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).timetuple()[:6]
-zin = zipfile.ZipFile(path)
-items = [(i, zin.read(i.filename)) for i in zin.infolist()]
-zin.close()
-zout = zipfile.ZipFile(path + ".norm", "w", zipfile.ZIP_DEFLATED)
-for info, data in items:
-    info.date_time = dt
-    info.create_system = 0
-    zout.writestr(info, data)
-zout.close()
-EOF
-  mv "$1.norm" "$1"
-}
-mkjar() {
-  out="$1"; stage="$2"
-  files=$(cd "$stage" && find . -type f | LC_ALL=C sort)
-  # Controlled tree, no spaces in class paths: word-splitting is intended.
-  (cd "$stage" && "$J8/jar" cfm "$out" "$BLD/MANIFEST.MF" $files)
-  normjar "$out"
-}
 mkjar "$BLD/jars/matou-spi.jar" "$BLD/spi"
 mkjar "$BLD/jars/matou-example1.jar" "$BLD/ex1"
 mkjar "$BLD/jars/matou-minimap.jar" "$BLD/mini"
@@ -862,25 +623,13 @@ cp tools/live/my_beast.geo.json "$SERV/config/matoubridge/my_beast.geo.json"
 echo "eula=true" > "$SERV/eula.txt"
 printf 'online-mode=false\nlevel-type=FLAT\ngamemode=1\ndifficulty=0\nmotd=E3 live proof\nmax-tick-time=-1\n' > "$SERV/server.properties"
 rm -rf "$SERV/world" "$SERV/logs"
-set +e
-(cd "$SERV" && timeout "$BOOT_SECS" "$J8/java" -Xmx1G -jar "$BOOT_JAR" nogui < /dev/null > boot-e3.log 2>&1)
-code=$?
-set -e
-[ "$code" -eq 124 ] || { echo "FAIL e3-live : server exited early (code $code, see $SERV/boot-e3.log)"; exit 1; }
-echo "ok e3-live : server ran ($BOOT_SECS s)"
+live_boot "$SERV" "$BOOT_SECS" "boot-e3.log" "$J8/java" -Xmx1G -jar "$BOOT_JAR" nogui
 
 # 6. Fail loudly on any runtime refusal or linkage error (stdout log plus
 #    the rolling server log — Forge splits output across both).
 LOGS="$SERV/boot-e3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-if grep -a -q "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|Encountered an unexpected exception" $LOGS; then
-  echo "FAIL e3-live : runtime refusal (see $SERV/boot-e3.log)"
-  grep -a -m5 "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|Caused by" $LOGS
-  exit 1
-fi
-grep -a -q "matoubridge" $LOGS \
-  || { echo "FAIL e3-live : mod never loaded"; exit 1; }
-echo "ok e3-live : bind clean, ticks clean"
+live_verdict "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|Encountered an unexpected exception" "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|Caused by" $LOGS
 # Registration proof: the setup-time verify line carries the dynamic
 # state id (post-flattening names need no numeric table — the anvil
 # probe reads namespaced names, and this line proves the custom name
@@ -904,63 +653,5 @@ echo "ok e3-live : my_gem registered ($(grep -a -o '\[MatouBridge\] registered-i
 "$J8/javac" -nowarn -cp "$BLD/spi:$BLD/ex1" -d "$BLD" tools/live/CellUnion.java
 "$J8/java" -cp "$BLD:$BLD/spi:$BLD/ex1" CellUnion \
   "$SERV/config/matoubridge/packs.cfg" 4000 "$BLD/union.txt"
-: > "$BLD/world.txt"
-for spec in "r.0.0.mca 0 0" "r.0.0.mca 1 0" "r.0.0.mca 0 1" \
-    "r.0.0.mca 1 1" "r.0.-1.mca 0 -1" "r.0.-1.mca 1 -1"; do
-  set -- $spec
-  for y in 60 61 63 64 65; do
-    python3 tools/live/anvil.py "$SERV/world/region/$1" "$2" "$3" "$y" \
-      | awk -v cx="$2" -v cz="$3" -v y="$y" \
-        '{split($1, a, ","); print (cx*16+a[1])" "y" "(cz*16+a[2])" "$2}' \
-      >> "$BLD/world.txt"
-  done
-done
-python3 - "$BLD/union.txt" "$BLD/world.txt" "$SERV/config/matoubridge/packs.cfg" <<'EOF'
-import sys
-# Names resolve through packs.cfg itself (wire block plus every
-# block.<ref>=<name> alias value) — never hardcoded, never guessed. A
-# world name outside that set fails loudly (extend the wire explicitly).
-wire_y, wire_block, allowed = None, None, set()
-for line in open(sys.argv[3]):
-    line = line.strip()
-    if line and not line.startswith("#"):
-        toks = line.split()
-        wire_y, wire_block = int(toks[1]), toks[2]
-        allowed.add(wire_block)
-        for tok in toks[3:]:
-            if tok.startswith("block.") and "=" in tok:
-                allowed.add(tok.split("=", 1)[1])
-if wire_y is None:
-    print("FAIL e3-live : no wire in packs.cfg")
-    sys.exit(1)
-u = {}
-for line in open(sys.argv[1]):
-    cell = line.split()[0]
-    parts = cell.split(",")
-    if len(parts) == 3 and ":" in parts[2]:
-        z, bname = parts[2].split(":", 1)
-        pos = (int(parts[0]), int(parts[1]), int(z))
-    else:
-        x, z = cell.split(",")
-        pos, bname = (int(x), wire_y, int(z)), wire_block
-    if bname not in allowed:
-        print("FAIL e3-live : union block <%s> outside packs.cfg set (extend the wire, never guess)" % bname)
-        sys.exit(1)
-    u[pos] = bname
-rows = [l.split() for l in open(sys.argv[2])]
-w = {(int(x), int(y), int(z)): n for x, y, z, n in rows}
-if not w:
-    print("FAIL e3-live : world empty at y=60..61,63..65 (no tick applied?)")
-    sys.exit(1)
-if set(w.values()) - allowed:
-    print("FAIL e3-live : foreign blocks %s" % sorted(set(w.values()) - allowed))
-    sys.exit(1)
-bad = {p: (w[p], u.get(p)) for p in w if u.get(p) != w[p]}
-if bad:
-    print("FAIL e3-live : name mismatch at %s (want pure union names)" % sorted(bad.items())[:5])
-    sys.exit(1)
-if u.keys() - w.keys():
-    print("FAIL e3-live : pure cells missing from world (%d)" % len(u.keys() - w.keys()))
-    sys.exit(1)
-print("ok e3-live : world == pure union (%d cells, names %s)" % (len(w), sorted(set(w.values()))))
-EOF
+live_anvil_loop "$SERV" "$BLD"
+live_compare_names "$BLD/union.txt" "$BLD/world.txt" "$SERV/config/matoubridge/packs.cfg"
