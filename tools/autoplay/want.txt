@@ -52,3 +52,13 @@ M net/minecraft/block/AbstractBlock$AbstractBlockState isAir func_196958_f ()Z 0
 M net/minecraft/world/server/ServerWorld getPlayers func_217369_A ()Ljava/util/List; 0
 M net/minecraft/world/server/ServerWorld addEntity func_217376_c (Lnet/minecraft/entity/Entity;)Z 0
 F net/minecraft/entity/EntityType PIG field_200784_X Lnet/minecraft/entity/EntityType; 1
+# Combat proof (COMBAT=1, rides a SPAWN=1 run): the companion teleports
+# the joined player beside the first bridge-landed beast, aims at the
+# head bone parsed pure from the shipped shape, and drives the genuine
+# vanilla attack path (attackTargetEntityWithCurrentItem — the event the
+# bridge hook refines), then polls the struck health through
+# LivingEntity/getHealth (the attacker eye it aimed from reads
+# through Entity/getEyeHeight, declaring type). Same derive practice.
+M net/minecraft/entity/player/PlayerEntity attackTargetEntityWithCurrentItem func_71059_n (Lnet/minecraft/entity/Entity;)V 0
+M net/minecraft/entity/LivingEntity getHealth func_110143_aJ ()F 0
+M net/minecraft/entity/Entity getEyeHeight func_70047_e ()F 0

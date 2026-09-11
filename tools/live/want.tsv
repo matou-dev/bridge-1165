@@ -46,3 +46,9 @@ net/minecraft/client/world/ClientWorld	func_217416_b	getAllEntities	()Ljava/lang
 com/mojang/blaze3d/matrix/MatrixStack	func_227866_c_	getLast	()Lcom/mojang/blaze3d/matrix/MatrixStack$Entry;	method	0
 com/mojang/blaze3d/matrix/MatrixStack$Entry	func_227870_a_	getMatrix	()Lnet/minecraft/util/math/vector/Matrix4f;	method	0
 net/minecraft/util/math/vector/Matrix4f	func_195879_b	write	(Ljava/nio/FloatBuffer;)V	method	0
+net/minecraft/entity/Entity	func_70040_Z	getLookVec	()Lnet/minecraft/util/math/vector/Vector3d;	method	0
+net/minecraft/entity/Entity	func_70047_e	getEyeHeight	()F	method	0
+net/minecraft/util/DamageSource	func_76346_g	getTrueSource	()Lnet/minecraft/entity/Entity;	method	0
+net/minecraft/util/math/vector/Vector3d	field_72450_a	x	D	field	0
+net/minecraft/util/math/vector/Vector3d	field_72448_b	y	D	field	0
+net/minecraft/util/math/vector/Vector3d	field_72449_c	z	D	field	0

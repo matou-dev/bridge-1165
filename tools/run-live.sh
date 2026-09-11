@@ -205,7 +205,7 @@ echo "ok e3-live : server provisioned (pins verified)"
 #    the field resolves snapshot-first (SRG name), then tsrg + javap
 #    confirm (obf owner, static, RegistryKey type).
 # Mechanics live in hub/tools/live-derive.sh (era 1.16), rows in
-# tools/live/want.tsv — same 48 lines, byte-identical output.
+# tools/live/want.tsv — same 54 lines, byte-identical output.
 SRG_NARROW="$E3_DIR/srg-narrow.srg"
 live_derive_mcp_snapshot "$E3_DIR/mcp_config-1.16.5-20210115.111550.zip" "$E3_DIR/mcp_snapshot-20210309-1.16.5.zip" "$MCSERV" "$J8/javap" "$SRG_NARROW" "$MCCLIENT" "tools/live/want.tsv"
 # 2b. Pin every derived line: a derivation the SRG does not confirm is a loud
@@ -267,8 +267,21 @@ pin_method "net/minecraft/client/world/ClientWorld/getAllEntities" "()Ljava/lang
 pin_method "com/mojang/blaze3d/matrix/MatrixStack/getLast" "()Lcom/mojang/blaze3d/matrix/MatrixStack\$Entry;"
 pin_method "com/mojang/blaze3d/matrix/MatrixStack\$Entry/getMatrix" "()Lnet/minecraft/util/math/vector/Matrix4f;"
 pin_method "net/minecraft/util/math/vector/Matrix4f/write" "(Ljava/nio/FloatBuffer;)V"
-[ "$(grep -c . "$SRG_NARROW")" = "48" ] \
-  || { echo "FAIL e3-live : narrow map drift (want 48 lines)"; exit 1; }
+# Combat tranche (hub decisions/VIRTUAL_HITBOXES.md, server weakspot
+# hook): Entity/getLookVec + getEyeHeight (the attacker eye/look
+# surface, owner Entity — 1.16.5 keeps no posX fields, so the origin
+# rides the already-pinned getPosX/Y/Z), DamageSource/getTrueSource
+# (the true attacker behind the hurt source) and Vector3d/x/y/z (the
+# look components on the 1.16 vector package — the 1.12 Vec3d owner
+# does not port). The narrow map grows 48 -> 54 lines.
+pin_method "net/minecraft/entity/Entity/getLookVec" "()Lnet/minecraft/util/math/vector/Vector3d;"
+pin_method "net/minecraft/entity/Entity/getEyeHeight" "()F"
+pin_method "net/minecraft/util/DamageSource/getTrueSource" "()Lnet/minecraft/entity/Entity;"
+pin_field "net/minecraft/util/math/vector/Vector3d/x"
+pin_field "net/minecraft/util/math/vector/Vector3d/y"
+pin_field "net/minecraft/util/math/vector/Vector3d/z"
+[ "$(grep -c . "$SRG_NARROW")" = "54" ] \
+  || { echo "FAIL e3-live : narrow map drift (want 54 lines)"; exit 1; }
 echo "ok e3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed Forge member against the provisioned jars. Forge
@@ -300,6 +313,10 @@ pin_uni 'net.minecraftforge.event.world.BlockEvent' 'getState('
 pin_uni 'net.minecraftforge.event.world.BlockEvent$BreakEvent' 'BreakEvent('
 pin_uni 'net.minecraftforge.event.entity.living.LivingEvent' 'getEntityLiving('
 pin_uni 'net.minecraftforge.event.entity.living.LivingDropsEvent' 'LivingDropsEvent('
+pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'LivingHurtEvent('
+pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'getSource('
+pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'getAmount('
+pin_uni 'net.minecraftforge.event.entity.living.LivingHurtEvent' 'setAmount('
 pin_uni 'net.minecraftforge.event.entity.EntityJoinWorldEvent' 'EntityJoinWorldEvent('
 pin_uni 'net.minecraftforge.event.entity.EntityJoinWorldEvent' 'getWorld('
 pin_uni 'net.minecraftforge.event.entity.EntityAttributeCreationEvent' 'put('
@@ -626,10 +643,13 @@ rm -rf "$SERV/world" "$SERV/logs"
 live_boot "$SERV" "$BOOT_SECS" "boot-e3.log" "$J8/java" -Xmx1G -jar "$BOOT_JAR" nogui
 
 # 6. Fail loudly on any runtime refusal or linkage error (stdout log plus
-#    the rolling server log — Forge splits output across both).
+#    the rolling server log — Forge splits output across both). E_HIT rides
+#    it too: the combat hook refuses corrupt attacker state loudly out of
+#    SPI (hub decisions/VIRTUAL_HITBOXES.md) — a NaN eye that passed would
+#    mean a defaulted multiplier somewhere.
 LOGS="$SERV/boot-e3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-live_verdict "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|Encountered an unexpected exception" "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|Caused by" $LOGS
+live_verdict "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|E_HIT\|Encountered an unexpected exception" "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|E_HIT\|Caused by" $LOGS
 # Registration proof: the setup-time verify line carries the dynamic
 # state id (post-flattening names need no numeric table — the anvil
 # probe reads namespaced names, and this line proves the custom name

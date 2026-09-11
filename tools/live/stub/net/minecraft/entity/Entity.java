@@ -1,5 +1,6 @@
 package net.minecraft.entity;
 
+import net.minecraft.util.math.vector.Vector3d;
 import net.minecraft.world.World;
 
 /**
@@ -72,5 +73,22 @@ public class Entity {
      * Pinned by the AUTOPLAY derive in hub tools/run-client.sh (want.txt).
      */
     public void remove() {
+    }
+
+    /**
+     * Combat compile stub: 36.2.42 {@code Entity} declares the attacker
+     * eye/look surface the bridge combat hook reads through this
+     * declaring type (owner discipline, hub decisions/LOOT.md) —
+     * {@code getLookVec} is {@code func_70040_Z
+     * ()->Vector3d} and {@code getEyeHeight} is {@code func_70047_e
+     * ()F}, both measured via javap against the pinned notch server jar
+     * (obf owners {@code aqa/bh} and {@code aqa/ce}). Never runs.
+     */
+    public Vector3d getLookVec() {
+        return null;
+    }
+
+    public float getEyeHeight() {
+        return 0.0f;
     }
 }
