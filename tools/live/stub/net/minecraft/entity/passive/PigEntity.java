@@ -3,6 +3,7 @@ package net.minecraft.entity.passive;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.ai.attributes.AttributeModifierMap;
+import net.minecraft.nbt.CompoundNBT;
 import net.minecraft.world.World;
 
 /**
@@ -29,5 +30,24 @@ public class PigEntity extends LivingEntity {
      */
     public static AttributeModifierMap.MutableAttribute func_234215_eI_() {
         return null;
+    }
+
+    /**
+     * Spawn-identity compile stub: 36.2.42 {@code PigEntity} declares the
+     * concrete persist helpers the bridge beast extends with its short
+     * mob name ({@code writeAdditional} is {@code func_213281_b},
+     * {@code readAdditional} is {@code func_70037_a}, both measured via
+     * javap + joined.tsrg against the pinned bytes — the public
+     * writeWithoutTypeId lives one level up on {@code Entity} and its
+     * super call would emit an unmappable intermediate owner, hub
+     * decisions/VIRTUAL_HITBOXES.md second-beast row). PigEntity widens
+     * both to public on the notch bytes (the {@code Entity} declarers
+     * stay protected abstract), so the stub and the override stay
+     * public. Never runs.
+     */
+    public void writeAdditional(CompoundNBT compound) {
+    }
+
+    public void readAdditional(CompoundNBT compound) {
     }
 }

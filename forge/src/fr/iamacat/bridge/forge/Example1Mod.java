@@ -5,6 +5,7 @@ import java.io.File;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -39,10 +40,12 @@ import net.minecraftforge.registries.ForgeRegistries;
  * ({@code FMLJavaModLoadingContext}), so the constructor only queues
  * validated specs as deferred entries and common setup verifies them —
  * the fill lands at registry-event time, always before setup, whatever
- * the mod order. The same constructor queues the one generic beast
- * (hub decisions/SPAWN.md, custom entity tranche) from the single-mob
- * spawn table — pig shape and renderer reused, vanilla pigs never carry
- * our census anymore. Block-only ports came first (no beast path); this
+ * the mod order. The same constructor queues the generic beast (hub
+ * decisions/SPAWN.md, custom entity tranche) from the sealed
+ * spawn-table mob list — one generic registration covers every sealed
+ * mob (the NBT identity distinguishes them at runtime, hub
+ * decisions/VIRTUAL_HITBOXES.md second-beast row), pig shape and
+ * renderer reused, vanilla pigs never carry our census anymore. Block-only ports came first (no beast path); this
  * tranche narrows the species, {@code MatouEntity} is wired.
  * New refusals stay registration-local ({@code E_REG_*}, never in the
  * shared catalog). Only this package may touch {@code net.minecraft} /
@@ -77,6 +80,10 @@ public final class Example1Mod {
             DeferredRegister.create(ForgeRegistries.ENTITIES, MODID);
     private static RegistryObject<EntityType<MatouEntity>> BEAST;
     private static String registeredEntity;
+    /** Every sealed mob id ({@code example1:<short>}, seal order): the
+     * multi-mob registration line (a single mob joins to itself, so the
+     * single-mob line stays byte-identical). */
+    private static List<String> registeredMobs;
 
     /**
      * The registered beast type for the bridge sink and the DEV
@@ -167,7 +174,7 @@ public final class Example1Mod {
                                 + registeredEntity + ">");
             }
             System.out.println("[MatouBridge] registered-entity <"
-                    + registeredEntity + ">");
+                    + join(registeredMobs) + ">");
             DistExecutor.runWhenOn(Dist.CLIENT,
                     () -> Example1Mod::registerBeastRenderer);
         }
@@ -254,12 +261,16 @@ public final class Example1Mod {
     }
 
     /**
-     * Entity registration: the single mob ref from the same owned content
+     * Entity registration: every sealed mob ref from the same owned content
      * the loot table and the spawn wire came from (parsed once, like
-     * blocks — never on the tick path). No owned file anywhere means no
-     * beast (Q1 cohabitation), same passivity as the spawn wire. Several
-     * distinct owned files refuse loudly — silent table picks are
-     * defaults, and per-mob tables are a documented re-opener.
+     * blocks — never on the tick path). One generic registration covers
+     * every sealed mob: the registry name rides the first sealed mob
+     * (file order, so single-mob tables register byte-identical bytes),
+     * and the per-mob census/dispatch reads each beast's NBT identity —
+     * a second mod-local id would be a second entity. No owned file
+     * anywhere means no beast (Q1 cohabitation), same passivity as the
+     * spawn wire. Several distinct owned files refuse loudly — silent
+     * table picks are defaults.
      *
      * <p>1.16.5 shape (DeferredRegister, never the 1.7.10/1.12
      * {@code EntityRegistry} call): the beast type builds through
@@ -268,11 +279,12 @@ public final class Example1Mod {
      * never recalled: the vanilla PIG block sizes {@code 0.9 x 0.9} and
      * tracks at range 10 with the Builder default update interval, so
      * no interval call here is pig-identical, not a missing knob) and
-     * queues under the short mob name (the register builds the entry id
-     * as {@code (modid, name)} from this DeferredRegister's own modid,
-     * same rule as blocks — short in, {@code example1:my_beast} out).
-     * The setup-time {@code verifyRegistered} tripwire reads it back
-     * through {@code ForgeRegistries.ENTITIES}.
+     * queues under the first sealed mob's short name (the register builds
+     * the entry id as {@code (modid, name)} from this DeferredRegister's
+     * own modid, same rule as blocks — short in,
+     * {@code example1:my_beast} out). The setup-time
+     * {@code verifyRegistered} tripwire reads it back through
+     * {@code ForgeRegistries.ENTITIES}.
      */
     private static void registerBeast(List<Packs.PackSpec> specs) {
         Set<String> owned = new HashSet<String>();
@@ -290,15 +302,21 @@ public final class Example1Mod {
                     + owned + "> (one beast table per bridge)");
         }
         String ownedFile = owned.iterator().next();
-        String mob = loadMobRef(ownedFile);
-        int colon = mob.indexOf(':');
-        String shortName = mob.substring(colon + 1);
+        List<String> mobs = loadMobRefs(ownedFile);
+        String first = mobs.get(0);
+        int colon = first.indexOf(':');
+        String shortName = first.substring(colon + 1);
         // Registry id, never the SPI mob ref: this DeferredRegister
         // builds entry ids as (own modid, name), so the tripwire must
         // look up <example1:my_beast>, not <example1.content:my_beast>
         // (the 1.7.10 tripwire is class-keyed and never reads the
         // string — copying mob verbatim only works there).
         registeredEntity = MODID + ":" + shortName;
+        registeredMobs = new ArrayList<String>();
+        for (String mob : mobs) {
+            registeredMobs.add(MODID + ":"
+                    + mob.substring(mob.indexOf(':') + 1));
+        }
         try {
             BEAST = ENTITIES.register(shortName,
                     () -> EntityType.Builder.create(MatouEntity::new,
@@ -308,7 +326,7 @@ public final class Example1Mod {
                             .build(shortName));
         } catch (Exception e) {
             throw new IllegalArgumentException("E_REG_BEAST:refused <"
-                    + mob + "> (" + e.getMessage() + ")", e);
+                    + first + "> (" + e.getMessage() + ")", e);
         }
     }
 
@@ -340,13 +358,13 @@ public final class Example1Mod {
     }
 
     /**
-     * Content mob ref, reached reflectively: the bridge stays content-blind
-     * at build time (Q2 — same rule as {@code loadSpecs}). The
-     * single-mob rule lives in {@code SpawnTable.fromFile} — zero or
-     * several mobs already refuse there, never a quiet pick here. Every
+     * Content mob refs, reached reflectively: the bridge stays content-blind
+     * at build time (Q2 — same rule as {@code loadSpecs}). Every sealed
+     * mob enumerates in file order through {@code SpawnTable.mobRefs} —
+     * zero mobs already refuse there, never a quiet pick here. Every
      * failure is coded E_REG_*, never a silent default.
      */
-    private static String loadMobRef(String ownedFile) {
+    private static List<String> loadMobRefs(String ownedFile) {
         final Class<?> cls;
         try {
             cls = Class.forName("fr.iamacat.example1.SpawnTable");
@@ -365,13 +383,22 @@ public final class Example1Mod {
         }
         try {
             Object table = fromFile.invoke(null, ownedFile);
-            Object mob = table.getClass().getMethod("mob").invoke(table);
-            if (!(mob instanceof String) || ((String) mob).isEmpty()
-                    || ((String) mob).indexOf(':') < 0) {
+            Object refs = table.getClass().getMethod("mobRefs")
+                    .invoke(table);
+            if (!(refs instanceof List) || ((List<?>) refs).isEmpty()) {
                 throw new IllegalStateException("E_REG_BEAST:shape "
-                        + "<fromFile> (want qualified mob ref)");
+                        + "<fromFile> (want non-empty qualified mob list)");
             }
-            return (String) mob;
+            List<String> out = new ArrayList<String>();
+            for (Object o : (List<?>) refs) {
+                if (!(o instanceof String) || ((String) o).isEmpty()
+                        || ((String) o).indexOf(':') < 0) {
+                    throw new IllegalStateException("E_REG_BEAST:shape "
+                            + "<fromFile> (want qualified mob refs)");
+                }
+                out.add((String) o);
+            }
+            return out;
         } catch (java.lang.reflect.InvocationTargetException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             throw new IllegalArgumentException("E_REG_BEAST:unreadable <"
@@ -384,6 +411,22 @@ public final class Example1Mod {
                     + "<fr.iamacat.example1.SpawnTable> ("
                     + e.getMessage() + ")", e);
         }
+    }
+
+    /**
+     * Comma join for the multi-mob registration line (same separator as
+     * {@code MatouBridgeMod.join} — one convention, not two; a single
+     * mob joins to itself, so the single-mob line stays byte-identical).
+     */
+    private static String join(List<String> parts) {
+        StringBuilder out = new StringBuilder();
+        for (String p : parts) {
+            if (out.length() > 0) {
+                out.append(',');
+            }
+            out.append(p);
+        }
+        return out.toString();
     }
 
     /**

@@ -52,3 +52,8 @@ net/minecraft/util/DamageSource	func_76346_g	getTrueSource	()Lnet/minecraft/enti
 net/minecraft/util/math/vector/Vector3d	field_72450_a	x	D	field	0
 net/minecraft/util/math/vector/Vector3d	field_72448_b	y	D	field	0
 net/minecraft/util/math/vector/Vector3d	field_72449_c	z	D	field	0
+net/minecraft/entity/passive/PigEntity	func_213281_b	writeAdditional	(Lnet/minecraft/nbt/CompoundNBT;)V	method	0
+net/minecraft/entity/passive/PigEntity	func_70037_a	readAdditional	(Lnet/minecraft/nbt/CompoundNBT;)V	method	0
+net/minecraft/nbt/CompoundNBT	func_74764_b	contains	(Ljava/lang/String;)Z	method	0
+net/minecraft/nbt/CompoundNBT	func_74779_i	getString	(Ljava/lang/String;)Ljava/lang/String;	method	0
+net/minecraft/nbt/CompoundNBT	func_74778_a	putString	(Ljava/lang/String;Ljava/lang/String;)V	method	0
