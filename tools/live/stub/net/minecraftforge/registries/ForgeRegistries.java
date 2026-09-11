@@ -2,6 +2,7 @@ package net.minecraftforge.registries;
 
 import net.minecraft.block.Block;
 import net.minecraft.entity.EntityType;
+import net.minecraft.item.Item;
 
 /**
  * E1 compile stub: shape-only Forge 1.16.5-36.2.42 API (universal jar,
@@ -16,5 +17,6 @@ import net.minecraft.entity.EntityType;
  */
 public class ForgeRegistries {
     public static final IForgeRegistry<Block> BLOCKS = null;
+    public static final IForgeRegistry<Item> ITEMS = null;
     public static final IForgeRegistry<EntityType<?>> ENTITIES = null;
 }

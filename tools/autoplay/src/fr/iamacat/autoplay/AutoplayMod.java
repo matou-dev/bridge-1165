@@ -13,6 +13,7 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.item.ItemEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.util.ResourceLocation;
@@ -582,7 +583,22 @@ public class AutoplayMod {
                 + lootBeastTick);
     }
 
+    private static final String LOOT_GEM = "example1:my_gem";
+
+    private static Item resolveGem() {
+        ResourceLocation id = new ResourceLocation(LOOT_GEM);
+        if (!ForgeRegistries.ITEMS.containsKey(id)) {
+            return null;
+        }
+        return ForgeRegistries.ITEMS.getValue(id);
+    }
+
     private void lootPoll() {
+        Item gem = resolveGem();
+        if (gem == null) {
+            lootFail("unknown <" + LOOT_GEM + "> in ForgeRegistries.ITEMS");
+            return;
+        }
         if (!oreDropped) {
             List<ItemEntity> found = world.getEntitiesWithinAABB(
                     ItemEntity.class, box(LOOT_ORE_X, LOOT_ORE_Y,
@@ -590,14 +606,14 @@ public class AutoplayMod {
                     (ItemEntity e) -> true);
             for (ItemEntity item : found) {
                 ItemStack stack = item.getItem();
-                if (stack == null || stack.getItem() != Items.DIAMOND) {
+                if (stack == null || stack.getItem() != gem) {
                     continue;
                 }
                 if (near(item, LOOT_ORE_X, LOOT_ORE_Y, LOOT_ORE_Z)) {
                     oreDropped = true;
                     oreDropTick = worldTicks;
                     System.out.println("[MatouAutoplay] loot ore dropped "
-                            + "<diamond> at worldTick " + oreDropTick
+                            + "<" + LOOT_GEM + "> at worldTick " + oreDropTick
                             + " (elapsed " + (oreDropTick - lootOreTick)
                             + ", want immediate)");
                     break;
@@ -611,14 +627,14 @@ public class AutoplayMod {
                     (ItemEntity e) -> true);
             for (ItemEntity item : found) {
                 ItemStack stack = item.getItem();
-                if (stack == null || stack.getItem() != Items.DIAMOND) {
+                if (stack == null || stack.getItem() != gem) {
                     continue;
                 }
                 if (near(item, LOOT_BEAST_X, LOOT_BEAST_Y, LOOT_BEAST_Z)) {
                     beastDropped = true;
                     beastDropTick = worldTicks;
                     System.out.println("[MatouAutoplay] loot beast dropped "
-                            + "<diamond> at worldTick " + beastDropTick
+                            + "<" + LOOT_GEM + "> at worldTick " + beastDropTick
                             + " (elapsed " + (beastDropTick - lootBeastTick)
                             + ", want immediate)");
                     break;
@@ -733,13 +749,18 @@ public class AutoplayMod {
     }
 
     private void spawnPoll() {
+        Item gem = resolveGem();
+        if (gem == null) {
+            spawnFail("unknown <" + LOOT_GEM + "> in ForgeRegistries.ITEMS");
+            return;
+        }
         AxisAlignedBB box = new AxisAlignedBB(killX - 2.5, killY - 2.5,
                 killZ - 2.5, killX + 3.5, killY + 3.5, killZ + 3.5);
         List<ItemEntity> found = world.getEntitiesWithinAABB(
                 ItemEntity.class, box, (ItemEntity e) -> true);
         for (ItemEntity item : found) {
             ItemStack stack = item.getItem();
-            if (stack == null || stack.getItem() != Items.DIAMOND) {
+            if (stack == null || stack.getItem() != gem) {
                 continue;
             }
             Entity body = item;
@@ -747,7 +768,7 @@ public class AutoplayMod {
                 carrierDropped = true;
                 carrierTick = worldTicks;
                 System.out.println("[MatouAutoplay] spawn beast dropped "
-                        + "<diamond> at worldTick " + carrierTick
+                        + "<" + LOOT_GEM + "> at worldTick " + carrierTick
                         + " (elapsed " + (carrierTick - killTick)
                         + ", want immediate)");
                 return;

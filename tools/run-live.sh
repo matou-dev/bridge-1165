@@ -232,6 +232,9 @@ WANT = [
     ("net/minecraft/entity/EntityType$Builder", "func_233606_a_", "trackingRange", "(I)Lnet/minecraft/entity/EntityType$Builder;", "method", False),
     ("net/minecraft/entity/EntityType$Builder", "func_206830_a", "build", "(Ljava/lang/String;)Lnet/minecraft/entity/EntityType;", "method", False),
     ("net/minecraft/entity/ai/attributes/AttributeModifierMap$MutableAttribute", "func_233813_a_", "create", "()Lnet/minecraft/entity/ai/attributes/AttributeModifierMap;", "method", False),
+    # Item registration tranche (hub decisions/ITEM_REGISTRATION.md):
+    ("net/minecraft/item/Item$Properties", "func_200917_a", "maxStackSize", "(I)Lnet/minecraft/item/Item$Properties;", "method", False),
+    ("net/minecraft/item/Item", "func_150891_b", "getIdFromItem", "(Lnet/minecraft/item/Item;)I", "method", True),
 ]
 z = zipfile.ZipFile(snapshot)
 mcpnames = {}
@@ -242,7 +245,7 @@ for row in z.read("fields.csv").decode("utf-8").splitlines()[1:]:
 for owner, srg, mcp, desc, kind, want_static in WANT:
     assert mcpnames.get(srg) == mcp, \
         "E_SRG_DERIVE:snapshot <%s> is <%s>, want <%s>" % (srg, mcpnames.get(srg), mcp)
-print("ok e3-live : snapshot names confirm 34/34")
+print("ok e3-live : snapshot names confirm 36/36")
 srg2obf, classes = {}, {}
 cur = None
 for raw in tsrg.splitlines():
@@ -327,7 +330,7 @@ for row in WANT:
         assert flags.get((tm[0][0], "F:" + ftype_obf)) == want_static, \
             "E_SRG_DERIVE:javap mismatch field <%s %s>" % (owner, srg)
         lines.append("FD: %s/%s %s/%s" % (owner, tm[0][1], owner, mcp))
-assert len(lines) == 34, "E_SRG_DERIVE:want 34 lines, got %d" % len(lines)
+assert len(lines) == 36, "E_SRG_DERIVE:want 36 lines, got %d" % len(lines)
 open(outpath, "w").write("\n".join(lines) + "\n")
 print("ok e3-live : narrow SRG derived (%d lines)" % len(lines))
 EOF
@@ -376,8 +379,10 @@ pin_method "net/minecraft/entity/EntityType\$Builder/size" "(FF)Lnet/minecraft/e
 pin_method "net/minecraft/entity/EntityType\$Builder/trackingRange" "(I)Lnet/minecraft/entity/EntityType\$Builder;"
 pin_method "net/minecraft/entity/EntityType\$Builder/build" "(Ljava/lang/String;)Lnet/minecraft/entity/EntityType;"
 pin_method "net/minecraft/entity/ai/attributes/AttributeModifierMap\$MutableAttribute/create" "()Lnet/minecraft/entity/ai/attributes/AttributeModifierMap;"
-[ "$(grep -c . "$SRG_NARROW")" = "34" ] \
-  || { echo "FAIL e3-live : narrow map drift (want 34 lines)"; exit 1; }
+pin_method "net/minecraft/item/Item\$Properties/maxStackSize" "(I)Lnet/minecraft/item/Item\$Properties;"
+pin_method "net/minecraft/item/Item/getIdFromItem" "(Lnet/minecraft/item/Item;)I"
+[ "$(grep -c . "$SRG_NARROW")" = "36" ] \
+  || { echo "FAIL e3-live : narrow map drift (want 36 lines)"; exit 1; }
 echo "ok e3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed Forge member against the provisioned jars. Forge
@@ -398,6 +403,7 @@ pin_uni 'net.minecraftforge.event.TickEvent$WorldTickEvent' 'world'
 pin_uni 'net.minecraftforge.fml.LogicalSide' 'SERVER'
 pin_uni 'net.minecraftforge.fml.common.Mod' 'value('
 pin_uni 'net.minecraftforge.registries.ForgeRegistries' 'BLOCKS'
+pin_uni 'net.minecraftforge.registries.ForgeRegistries' 'ITEMS'
 pin_uni 'net.minecraftforge.registries.IForgeRegistry' 'getValue('
 pin_uni 'net.minecraftforge.registries.IForgeRegistry' 'containsKey('
 pin_uni 'net.minecraftforge.registries.DeferredRegister' 'create('
@@ -663,6 +669,9 @@ echo "ok e3-live : bind clean, ticks clean"
 grep -a -q '\[MatouBridge\] registered <example1:my_ore> id [0-9][0-9]*' $LOGS \
   || { echo "FAIL e3-live : my_ore registration line absent from boot log (deferred fill never registered? see $SERV/boot-e3.log)"; exit 1; }
 echo "ok e3-live : my_ore registered ($(grep -a -o '\[MatouBridge\] registered <example1:my_ore> id [0-9][0-9]*' $LOGS | tail -n 1))"
+grep -a -q '\[MatouBridge\] registered-item <example1:my_gem> id [0-9][0-9]*' $LOGS \
+  || { echo "FAIL e3-live : my_gem registration line absent from boot log (deferred fill never registered? see $SERV/boot-e3.log)"; exit 1; }
+echo "ok e3-live : my_gem registered ($(grep -a -o '\[MatouBridge\] registered-item <example1:my_gem> id [0-9][0-9]*' $LOGS | tail -n 1))"
 
 # 7. Positive proof: world blocks in chunks (0..1, -1..1) at y=60..61
 #    plus y=63..65 must equal the pure decision union — plane cells

@@ -37,8 +37,8 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.ai.attributes.Attributes;
 import net.minecraft.entity.item.ItemEntity;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.vector.Vector3i;
@@ -432,9 +432,11 @@ public final class MatouBridgeMod {
         System.out.println("[MatouBridge] loot wired <" + lootTable
                 + "> count <" + lootCount + "> ore <" + oreNames + ">"
                 + lootNote);
-        if (Items.DIAMOND == null) {
-            throw new IllegalArgumentException(
-                    "E_LOOT_GEM:unknown <minecraft:diamond>");
+        for (String dropRef : lootTable.values()) {
+            if (resolveItem(dropRef) == null) {
+                throw new IllegalArgumentException(
+                        "E_LOOT_ITEM:unknown <" + dropRef + ">");
+            }
         }
     }
 
@@ -682,7 +684,7 @@ public final class MatouBridgeMod {
         List<String> due = loot.decide(snap);
         for (String cell : due) {
             ForgeCells.BlockCell vol = ForgeCells.parseBlockCell(cell);
-            dropCarrier(world, vol.x, vol.y, vol.z);
+            dropCarrier(world, vol.x, vol.y, vol.z, vol.block);
         }
         if (!due.isEmpty()) {
             System.out.println("[MatouBridge] loot dropped "
@@ -901,22 +903,53 @@ public final class MatouBridgeMod {
     }
 
     /**
-     * Loot landing: one vanilla-diamond carrier per due drop, beside the
+     * Loot landing: one registered-item carrier per due drop, beside the
      * vanilla drops (never replacing them). A refused spawn fails loudly
      * — a lost carrier is loot lost silently otherwise. The tick world
      * is always a {@code ServerWorld} on the server path; anything else
      * refuses loudly instead of casting blind.
      */
-    private void dropCarrier(World world, int x, int y, int z) {
+    private void dropCarrier(World world, int x, int y, int z, String itemRef) {
         if (!(world instanceof ServerWorld)) {
             throw new IllegalStateException("E_LOOT_SPAWN:noworld <" + x
                     + "," + y + "," + z + "> (want a server world)");
         }
+        Item item = resolveItem(itemRef);
+        if (item == null) {
+            throw new IllegalStateException("E_LOOT_ITEM:unknown <" + itemRef + ">");
+        }
         ItemEntity carrier = new ItemEntity(world, x + 0.5, y + 0.5,
-                z + 0.5, new ItemStack(Items.DIAMOND, 1));
+                z + 0.5, new ItemStack(item, 1));
         if (!((ServerWorld) world).addEntity(carrier)) {
             throw new IllegalStateException("E_LOOT_SPAWN:refused <" + x
                     + "," + y + "," + z + ">");
         }
+    }
+
+    static Item resolveItem(String ref) {
+        if (ref == null || ref.isEmpty()) {
+            return null;
+        }
+        int colon = ref.indexOf(':');
+        if (colon < 0) {
+            ResourceLocation id = new ResourceLocation("example1:" + ref);
+            return ForgeRegistries.ITEMS.containsKey(id)
+                    ? ForgeRegistries.ITEMS.getValue(id) : null;
+        }
+        ResourceLocation id = new ResourceLocation(ref);
+        if (ForgeRegistries.ITEMS.containsKey(id)) {
+            return ForgeRegistries.ITEMS.getValue(id);
+        }
+        String prefix = ref.substring(0, colon);
+        String name = ref.substring(colon + 1);
+        int dot = prefix.indexOf('.');
+        if (dot > 0) {
+            String modId = prefix.substring(0, dot);
+            ResourceLocation alt = new ResourceLocation(modId + ":" + name);
+            if (ForgeRegistries.ITEMS.containsKey(alt)) {
+                return ForgeRegistries.ITEMS.getValue(alt);
+            }
+        }
+        return null;
     }
 }
