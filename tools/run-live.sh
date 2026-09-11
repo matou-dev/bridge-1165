@@ -675,6 +675,12 @@ ALLOW = {
     ("net/minecraft/world/WorldProvider", "getDimension"),
     ("net/minecraft/block/Block", "setRegistryName"),
     ("net/minecraft/item/Item", "setRegistryName"),
+    # EntityClassification/CREATURE: enum constants ship MCP-named
+    # (joined.tsrg carries no row — runtime name identical, passthrough
+    # by construction like Forge classes; every server run executes the
+    # Builder.create call reading it, so a wrong name would already die
+    # linking before the verdict).
+    ("net/minecraft/entity/EntityClassification", "CREATURE"),
 }
 SRG_SPELLED = re.compile(r"^(func_|field_)\d+_")
 def u(pool, i):

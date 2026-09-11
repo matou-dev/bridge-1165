@@ -48,7 +48,10 @@ public class GL20C {
     public static int glGetUniformLocation(int program, CharSequence name) {
         return 0;
     }
-    public static void glUniformMatrix4(int location, boolean transpose, FloatBuffer matrices) {}
+    // Measured on the provisioned LWJGL 3.2.2 bytes (javap GL20C):
+    // glUniformMatrix4fv — the LWJGL2-era glUniformMatrix4 does not
+    // exist here (found live as NoSuchMethodError, never recalled).
+    public static void glUniformMatrix4fv(int location, boolean transpose, FloatBuffer matrices) {}
     public static void glUniform1i(int location, int value) {}
     public static void glUniform1f(int location, float value) {}
     public static void glUniform4f(int location, float x, float y, float z, float w) {}

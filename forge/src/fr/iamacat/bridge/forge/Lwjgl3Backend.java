@@ -151,7 +151,11 @@ public class Lwjgl3Backend implements GlBackend {
 
     @Override
     public void uniformMatrix4fv(int location, boolean transpose, FloatBuffer matrices) {
-        GL20C.glUniformMatrix4(location, transpose, matrices);
+        // Measured on the provisioned LWJGL 3.2.2 bytes (javap GL20C):
+        // the vector form is glUniformMatrix4fv — the LWJGL2-era
+        // glUniformMatrix4 name does not exist here (found live as
+        // NoSuchMethodError on the first 1165 draw, never recalled again).
+        GL20C.glUniformMatrix4fv(location, transpose, matrices);
     }
 
     @Override
