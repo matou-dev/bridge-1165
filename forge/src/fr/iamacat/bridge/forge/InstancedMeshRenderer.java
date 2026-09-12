@@ -90,6 +90,7 @@ public final class InstancedMeshRenderer {
     private final GlBackend backend;
     private boolean initialized;
     private boolean drawLogged;
+    private int skippedNan;
     private int program;
     private int vao;
     private int meshVbo;
@@ -267,18 +268,49 @@ public final class InstancedMeshRenderer {
 
         // View/projection ride the event (the exact matrices vanilla
         // renders the world with this frame — uploaded via Matrix4f.write,
-        // never a fixed-function read).
+        // never a fixed-function read). write() is absolute-put (SRG
+        // func_195879_b stores 16 floats at indices 0..15 without moving
+        // the position — measured on the pinned client bytes), so rewind,
+        // never flip: flip would collapse the limit to the unmoved
+        // position and both the plan read and the upload would see zero
+        // remaining (found live as IndexOutOfBoundsException, first draw).
         viewMatrixBuffer.clear();
         matrices.getLast().getMatrix().write(viewMatrixBuffer);
-        viewMatrixBuffer.flip();
+        viewMatrixBuffer.rewind();
         projMatrixBuffer.clear();
         projection.write(projMatrixBuffer);
-        projMatrixBuffer.flip();
+        projMatrixBuffer.rewind();
         // The write() buffers land GL column-major, exactly as the
         // uniform upload below consumes them — feed them column-major
         // into the single row-major product the plan consumes.
         float[] vp = ViewProjection.vpRowMajor(colMajor(viewMatrixBuffer),
                 colMajor(projMatrixBuffer));
+        // Loading-transient guard (measured live 2026-09-12: during the
+        // client-world join RenderWorldLast fires with a NaN projection
+        // from the event while the view is already sane — vanilla draws
+        // garbage those frames too). A non-projection cannot be culled
+        // against, so the frame is skipped BEFORE the seal (never
+        // planned, never uploaded) — loudly on first sight and every
+        // 600th, and refusing with the seal's own code past 3600
+        // consecutive bad frames (a full minute: no join lasts that
+        // long, so persistence is a wiring bug, never a transient).
+        if (!finite16(vp)) {
+            skippedNan++;
+            if (skippedNan == 1 || skippedNan % 600 == 0) {
+                System.out.println("[MatouRenderer] skipped non-finite"
+                        + " view-projection (run " + skippedNan
+                        + " consecutive frames — join transient,"
+                        + " draw skipped, never planned)");
+            }
+            if (skippedNan > 3600) {
+                throw new IllegalStateException(
+                        "E_RENDER_FRUSTUM:degenerate <projection non-finite "
+                        + skippedNan + " consecutive frames>"
+                        + " (not a projection)");
+            }
+            return;
+        }
+        skippedNan = 0;
         Map<MatouId, Object> states = RenderSeal.seal(
                 RenderJob.vocabulary(),
                 new double[] {eyeX, eyeY, eyeZ}, vp, recs);
@@ -364,8 +396,9 @@ public final class InstancedMeshRenderer {
     /**
      * Reads back 16 column-major floats without moving the buffer
      * position (the uniform upload below reads the same buffer
-     * afterwards — an absolute get disturbs nothing). write() plus
-     * flip leaves the data readable — read absolutely, disturb nothing.
+     * afterwards — an absolute get disturbs nothing). clear() plus the
+     * absolute-put write() plus rewind() leaves the data readable —
+     * read absolutely, disturb nothing.
      */
     private static float[] colMajor(FloatBuffer buf) {
         float[] m = new float[16];
@@ -373,5 +406,19 @@ public final class InstancedMeshRenderer {
             m[i] = buf.get(i);
         }
         return m;
+    }
+
+    /**
+     * Every lane finite (NaN or infinite poisons the product — the
+     * loading-transient signature above). Pure lane scan, no
+     * allocation, disturb nothing.
+     */
+    private static boolean finite16(float[] m) {
+        for (int i = 0; i < 16; i++) {
+            if (!Float.isFinite(m[i])) {
+                return false;
+            }
+        }
+        return true;
     }
 }
