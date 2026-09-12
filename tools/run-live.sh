@@ -205,7 +205,7 @@ echo "ok e3-live : server provisioned (pins verified)"
 #    the field resolves snapshot-first (SRG name), then tsrg + javap
 #    confirm (obf owner, static, RegistryKey type).
 # Mechanics live in hub/tools/live-derive.sh (era 1.16), rows in
-# tools/live/want.tsv — same 60 lines, byte-identical output.
+# tools/live/want.tsv — same 62 lines, byte-identical output.
 SRG_NARROW="$E3_DIR/srg-narrow.srg"
 live_derive_mcp_snapshot "$E3_DIR/mcp_config-1.16.5-20210115.111550.zip" "$E3_DIR/mcp_snapshot-20210309-1.16.5.zip" "$MCSERV" "$J8/javap" "$SRG_NARROW" "$MCCLIENT" "tools/live/want.tsv"
 # 2b. Pin every derived line: a derivation the SRG does not confirm is a loud
@@ -258,7 +258,7 @@ pin_method "net/minecraft/item/Item/getIdFromItem" "(Lnet/minecraft/item/Item;)I
 # rotationYaw/rotationPitch (the event stack top is a leftover rotation,
 # never the camera — measured live 2026-09-12 with an offline replay —
 # so it feeds nothing; its getLast/getMatrix rows below stay pinned but
-# unreferenced until the next row rebalance, the hub derive asserts 60
+# unreferenced until the next row rebalance, the hub derive asserts 62
 # lines), interpolation rides the prevPos + rotation fields.
 pin_field "net/minecraft/entity/Entity/prevPosX"
 pin_field "net/minecraft/entity/Entity/prevPosY"
@@ -266,6 +266,8 @@ pin_field "net/minecraft/entity/Entity/prevPosZ"
 pin_field "net/minecraft/entity/Entity/rotationYaw"
 pin_field "net/minecraft/entity/Entity/rotationPitch"
 pin_field "net/minecraft/entity/Entity/ticksExisted"
+pin_field "net/minecraft/entity/Entity/distanceWalkedModified"
+pin_field "net/minecraft/entity/Entity/prevDistanceWalkedModified"
 pin_method "net/minecraft/client/Minecraft/getInstance" "()Lnet/minecraft/client/Minecraft;"
 pin_field "net/minecraft/client/Minecraft/world"
 pin_method "net/minecraft/client/Minecraft/getRenderViewEntity" "()Lnet/minecraft/entity/Entity;"
@@ -294,6 +296,12 @@ pin_method "net/minecraft/util/math/vector/Matrix4f/write" "(Ljava/nio/FloatBuff
 #    hitboxes on the entity-age clock) adds 1 row: Entity/ticksExisted
 #    (the walk-clock field, owner Entity) — the narrow map grows
 #    59 -> 60 lines.
+#    The walk-phase driver tranche (same decision file) adds 2 rows:
+#    Entity/distanceWalkedModified (field_70140_Q F) plus
+#    Entity/prevDistanceWalkedModified (field_70141_P F) — the per-mob
+#    distance clock feeding query.modified_distance_moved (renderer
+#    interpolates prev-to-cur over partialTicks, hitboxes read cur).
+#    The narrow map grows 60 -> 62 lines.
 pin_method "net/minecraft/entity/Entity/getLookVec" "()Lnet/minecraft/util/math/vector/Vector3d;"
 pin_method "net/minecraft/entity/Entity/getEyeHeight" "()F"
 pin_method "net/minecraft/util/DamageSource/getTrueSource" "()Lnet/minecraft/entity/Entity;"
@@ -305,8 +313,8 @@ pin_method "net/minecraft/entity/passive/PigEntity/readAdditional" "(Lnet/minecr
 pin_method "net/minecraft/nbt/CompoundNBT/contains" "(Ljava/lang/String;)Z"
 pin_method "net/minecraft/nbt/CompoundNBT/getString" "(Ljava/lang/String;)Ljava/lang/String;"
 pin_method "net/minecraft/nbt/CompoundNBT/putString" "(Ljava/lang/String;Ljava/lang/String;)V"
-[ "$(grep -c . "$SRG_NARROW")" = "60" ] \
-  || { echo "FAIL e3-live : narrow map drift (want 60 lines)"; exit 1; }
+[ "$(grep -c . "$SRG_NARROW")" = "62" ] \
+  || { echo "FAIL e3-live : narrow map drift (want 62 lines)"; exit 1; }
 echo "ok e3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed Forge member against the provisioned jars. Forge

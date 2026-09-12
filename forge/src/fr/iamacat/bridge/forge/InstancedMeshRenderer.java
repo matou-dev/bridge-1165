@@ -534,7 +534,10 @@ public final class InstancedMeshRenderer {
                 // discipline — never the beast), one sealed-clip pose
                 // per mob per bucket.
                 double t = e.ticksExisted / 20.0;
-                Molang.Ctx ctx = new Molang.Ctx(t, t, 0.0, 0.05, null);
+                double dist = BeastAnimation.interpDistMoved(
+                        e.prevDistanceWalkedModified,
+                        e.distanceWalkedModified, partialTicks);
+                Molang.Ctx ctx = BeastAnimation.animCtx(t, dist);
                 MatouAnimation.AnimPose pose = BeastAnimation.poseFor(
                         beast.mobOrFirst(), t, ctx);
                 Map<String, float[]> deltas = skinModel.poseDeltaMatrices(pose);
