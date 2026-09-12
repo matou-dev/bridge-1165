@@ -205,7 +205,7 @@ echo "ok e3-live : server provisioned (pins verified)"
 #    the field resolves snapshot-first (SRG name), then tsrg + javap
 #    confirm (obf owner, static, RegistryKey type).
 # Mechanics live in hub/tools/live-derive.sh (era 1.16), rows in
-# tools/live/want.tsv — same 59 lines, byte-identical output.
+# tools/live/want.tsv — same 60 lines, byte-identical output.
 SRG_NARROW="$E3_DIR/srg-narrow.srg"
 live_derive_mcp_snapshot "$E3_DIR/mcp_config-1.16.5-20210115.111550.zip" "$E3_DIR/mcp_snapshot-20210309-1.16.5.zip" "$MCSERV" "$J8/javap" "$SRG_NARROW" "$MCCLIENT" "tools/live/want.tsv"
 # 2b. Pin every derived line: a derivation the SRG does not confirm is a loud
@@ -258,13 +258,14 @@ pin_method "net/minecraft/item/Item/getIdFromItem" "(Lnet/minecraft/item/Item;)I
 # rotationYaw/rotationPitch (the event stack top is a leftover rotation,
 # never the camera — measured live 2026-09-12 with an offline replay —
 # so it feeds nothing; its getLast/getMatrix rows below stay pinned but
-# unreferenced until the next row rebalance, the hub derive asserts 59
+# unreferenced until the next row rebalance, the hub derive asserts 60
 # lines), interpolation rides the prevPos + rotation fields.
 pin_field "net/minecraft/entity/Entity/prevPosX"
 pin_field "net/minecraft/entity/Entity/prevPosY"
 pin_field "net/minecraft/entity/Entity/prevPosZ"
 pin_field "net/minecraft/entity/Entity/rotationYaw"
 pin_field "net/minecraft/entity/Entity/rotationPitch"
+pin_field "net/minecraft/entity/Entity/ticksExisted"
 pin_method "net/minecraft/client/Minecraft/getInstance" "()Lnet/minecraft/client/Minecraft;"
 pin_field "net/minecraft/client/Minecraft/world"
 pin_method "net/minecraft/client/Minecraft/getRenderViewEntity" "()Lnet/minecraft/entity/Entity;"
@@ -289,6 +290,10 @@ pin_method "net/minecraft/util/math/vector/Matrix4f/write" "(Ljava/nio/FloatBuff
 #    putString (the string-tag surface, 1.16 names — the 1.12
 #    hasKey/setString names do not port) — the narrow map grows
 #    54 -> 59 lines.
+#    The animation tranche (hub decisions/MATOU_ANIMATION.md, posed
+#    hitboxes on the entity-age clock) adds 1 row: Entity/ticksExisted
+#    (the walk-clock field, owner Entity) — the narrow map grows
+#    59 -> 60 lines.
 pin_method "net/minecraft/entity/Entity/getLookVec" "()Lnet/minecraft/util/math/vector/Vector3d;"
 pin_method "net/minecraft/entity/Entity/getEyeHeight" "()F"
 pin_method "net/minecraft/util/DamageSource/getTrueSource" "()Lnet/minecraft/entity/Entity;"
@@ -300,8 +305,8 @@ pin_method "net/minecraft/entity/passive/PigEntity/readAdditional" "(Lnet/minecr
 pin_method "net/minecraft/nbt/CompoundNBT/contains" "(Ljava/lang/String;)Z"
 pin_method "net/minecraft/nbt/CompoundNBT/getString" "(Ljava/lang/String;)Ljava/lang/String;"
 pin_method "net/minecraft/nbt/CompoundNBT/putString" "(Ljava/lang/String;Ljava/lang/String;)V"
-[ "$(grep -c . "$SRG_NARROW")" = "59" ] \
-  || { echo "FAIL e3-live : narrow map drift (want 59 lines)"; exit 1; }
+[ "$(grep -c . "$SRG_NARROW")" = "60" ] \
+  || { echo "FAIL e3-live : narrow map drift (want 60 lines)"; exit 1; }
 echo "ok e3-live : stubs pinned to derived SRG"
 
 # 2c. Pin every stubbed Forge member against the provisioned jars. Forge
@@ -633,8 +638,9 @@ if [ "${BUILD_ONLY:-}" = "1" ]; then
   cp ../example1/content/owned.matou ../example1/content/additive.matou ../example1/content/structure.matou ../example1/content/vein.matou dist/matou-content/
   cp tools/live/my_beast.geo.json dist/my_beast.geo.json
   cp tools/live/my_beast.png dist/my_beast.png
+  cp tools/live/my_beast.animation.json dist/my_beast.animation.json
   printf '# Copy to <server>/config/matoubridge/packs.cfg and replace <SERVER>.\n# Wire y=63 keeps plane cells on their own slice, off the structure slices (64..65).\n# The wire block is the registered custom ore (DeferredRegister queues example1:my_ore from owned.matou, the fill lands before setup binds resolve it); aliases stay vanilla stone.\n# Vein clusters land on the BASE_Y=60 band (slices 60..61) as the registered ore via the veinblock alias.\nfr.iamacat.example1.ExamplePack 63 example1:my_ore ownedFile=<SERVER>/matou-content/owned.matou scatterFile=<SERVER>/matou-content/additive.matou structureFile=<SERVER>/matou-content/structure.matou block.example1.structures:hut_wall=minecraft:stone block.example1.structures:hut_roof=minecraft:stone veinFile=<SERVER>/matou-content/vein.matou veinblock.example1.content:my_ore=example1:my_ore\n' > dist/packs.cfg.example
-  (cd dist && sha256sum "matou-spi-$VERSION.jar" "matou-example1-$VERSION.jar" "matou-minimap-$VERSION.jar" "matoubridge-$VERSION.jar" matou-content/owned.matou matou-content/additive.matou matou-content/structure.matou matou-content/vein.matou packs.cfg.example my_beast.geo.json my_beast.png > SHA256SUMS.txt)
+  (cd dist && sha256sum "matou-spi-$VERSION.jar" "matou-example1-$VERSION.jar" "matou-minimap-$VERSION.jar" "matoubridge-$VERSION.jar" matou-content/owned.matou matou-content/additive.matou matou-content/structure.matou matou-content/vein.matou packs.cfg.example my_beast.geo.json my_beast.png my_beast.animation.json > SHA256SUMS.txt)
   (cd dist && sha256sum -c SHA256SUMS.txt)
   echo "ok r2-release : dist/ assembled (VERSION=$VERSION)"
   exit 0
@@ -666,6 +672,10 @@ cp "$GEO_SRC" "$SERV/config/matoubridge/my_beast.geo.json"
 # decisions/MATOU_MODEL.md). Deployed beside the geometry,
 # operator-replaceable like it.
 cp tools/live/my_beast.png "$SERV/config/matoubridge/my_beast.png"
+# Beast animation: the shipped walk clip the skinned renderer poses and
+# the hitboxes ride (hub decisions/MATOU_ANIMATION.md). Deployed beside
+# the geometry, operator-replaceable like it.
+cp tools/live/my_beast.animation.json "$SERV/config/matoubridge/my_beast.animation.json"
 echo "eula=true" > "$SERV/eula.txt"
 printf 'online-mode=false\nlevel-type=FLAT\ngamemode=1\ndifficulty=0\nmotd=E3 live proof\nmax-tick-time=-1\n' > "$SERV/server.properties"
 rm -rf "$SERV/world" "$SERV/logs"
@@ -675,10 +685,13 @@ live_boot "$SERV" "$BOOT_SECS" "boot-e3.log" "$J8/java" -Xmx1G -jar "$BOOT_JAR" 
 #    the rolling server log — Forge splits output across both). E_HIT rides
 #    it too: the combat hook refuses corrupt attacker state loudly out of
 #    SPI (hub decisions/VIRTUAL_HITBOXES.md) — a NaN eye that passed would
-#    mean a defaulted multiplier somewhere.
+#    mean a defaulted multiplier somewhere. E_ANIM rides it as well: the
+#    posed hitboxes evaluate the sealed clip server-side (hub
+#    decisions/MATOU_ANIMATION.md) — an animation refusal on the server is
+#    a no-regression breach, never a silent bind fallback.
 LOGS="$SERV/boot-e3.log"
 [ -f "$SERV/logs/latest.log" ] && LOGS="$LOGS $SERV/logs/latest.log"
-live_verdict "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|E_HIT\|Encountered an unexpected exception" "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|E_HIT\|Caused by" $LOGS
+live_verdict "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|E_HIT\|E_ANIM\|Encountered an unexpected exception" "NoSuchMethodError\|NoSuchFieldError\|NoClassDefFoundError\|E_FORGE\|E_BRIDGE\|E_EXAMPLE\|E_REG\|E_LOOT\|E_SPAWN\|E_MODEL\|E_HIT\|E_ANIM\|Caused by" $LOGS
 # Registration proof: the setup-time verify line carries the dynamic
 # state id (post-flattening names need no numeric table — the anvil
 # probe reads namespaced names, and this line proves the custom name

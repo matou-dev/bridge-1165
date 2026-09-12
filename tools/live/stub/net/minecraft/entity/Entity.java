@@ -45,6 +45,14 @@ public class Entity {
     public double prevPosZ;
     public float rotationYaw;
     public float rotationPitch;
+    /**
+     * Animation compile stub: 36.2.42 {@code Entity} declares the age
+     * counter the skinned renderer and posed hitboxes read for the clip
+     * clock ({@code ticksExisted} is {@code field_70173_aa I}, measured
+     * against the pinned notch server jar like every other Entity row
+     * in {@code tools/live/want.tsv}). Never runs.
+     */
+    public int ticksExisted;
 
     public double getPosX() {
         return 0;
