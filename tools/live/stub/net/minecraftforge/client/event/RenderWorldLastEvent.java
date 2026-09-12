@@ -9,8 +9,10 @@ import net.minecraftforge.eventbus.api.Event;
  * Never runs (compile classpath only). Forge class, never obfuscated:
  * presence-pinned against the provisioned 36.2.42 universal by
  * tools/run-live.sh (getPartialTicks/getMatrixStack/getProjectionMatrix
- * measured there — the 1.16.5 event carries the MatrixStack whose top
- * the renderer uploads, the 1.12 float-only shape does not port).
+ * measured there — the 1.16.5 event carries the MatrixStack plus the
+ * projection; the renderer feeds only the projection (the stack top is
+ * a leftover rotation, never the camera — the 1.12 float-only shape
+ * does not port).
  */
 public class RenderWorldLastEvent extends Event {
     public float getPartialTicks() {

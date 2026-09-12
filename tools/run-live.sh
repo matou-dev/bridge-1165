@@ -252,9 +252,14 @@ pin_method "net/minecraft/item/Item/getIdFromItem" "(Lnet/minecraft/item/Item;)I
 # above (same measure discipline — never recalled): getInstance is the
 # static func_71410_x, world is the ClientWorld-typed field_71441_e,
 # getRenderViewEntity is func_175606_aa (a method here, Entity-typed),
-# iteration rides ClientWorld.getAllEntities (func_217416_b), matrices
-# ride MatrixStack.getLast/getMatrix/Matrix4f.write, interpolation rides
-# the prevPos + rotation fields.
+# iteration rides ClientWorld.getAllEntities (func_217416_b), the
+# projection rides the event Matrix4f.write, the camera view is rebuilt
+# bridge-side from the interpolated eye plus the already-pinned
+# rotationYaw/rotationPitch (the event stack top is a leftover rotation,
+# never the camera — measured live 2026-09-12 with an offline replay —
+# so it feeds nothing; its getLast/getMatrix rows below stay pinned but
+# unreferenced until the next row rebalance, the hub derive asserts 59
+# lines), interpolation rides the prevPos + rotation fields.
 pin_field "net/minecraft/entity/Entity/prevPosX"
 pin_field "net/minecraft/entity/Entity/prevPosY"
 pin_field "net/minecraft/entity/Entity/prevPosZ"

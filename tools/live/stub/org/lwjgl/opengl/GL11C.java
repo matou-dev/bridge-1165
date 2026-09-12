@@ -6,8 +6,9 @@ import java.nio.ByteBuffer;
  * Shape-only compile stub for LWJGL 3 GL11C (1.16.5 era).
  * Never runs (compile classpath only). Same role as the 1122 GL11 stub
  * minus the fixed-function matrix reads: the 1165 renderer takes its
- * view/projection matrices from the RenderWorldLastEvent MatrixStack
- * (hub decisions/GL_INSTANCING_ADAPTER.md), never glGetFloat.
+ * projection from the RenderWorldLastEvent and rebuilds its view from
+ * the render-view angles (hub decisions/GL_INSTANCING_ADAPTER.md),
+ * never glGetFloat.
  */
 public class GL11C {
     public static int GL_TRUE;

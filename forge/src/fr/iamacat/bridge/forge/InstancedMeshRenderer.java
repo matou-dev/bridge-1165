@@ -40,10 +40,12 @@ import org.lwjgl.opengl.GL11C;
  * {@code loadedEntityList} field is gone), the view entity comes from
  * the {@code getRenderViewEntity} method (Entity-typed — the 1710
  * EntityLivingBase trap is absent here), interpolation rides
- * {@code prevPos + (getPos - prevPos) * pt}, and the shader matrices
- * come from the event MatrixStack top plus the event projection
- * (uploaded via {@code Matrix4f.write} — the 1.12 {@code glGetFloat}
- * fixed-function reads do not port to blaze3d).
+ * {@code prevPos + (getPos - prevPos) * pt}, the projection comes from
+ * the event (uploaded via {@code Matrix4f.write} — the 1.12
+ * {@code glGetFloat} fixed-function reads do not port to blaze3d),
+ * and the camera view is rebuilt bridge-side from the render-view
+ * yaw/pitch (the event MatrixStack top is a leftover rotation, never
+ * the camera — measured live 2026-09-12 — so it feeds nothing).
  */
 @OnlyIn(Dist.CLIENT)
 public final class InstancedMeshRenderer {
@@ -236,10 +238,10 @@ public final class InstancedMeshRenderer {
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
-        render(event.getPartialTicks(), event.getMatrixStack(), event.getProjectionMatrix());
+        render(event.getPartialTicks(), event.getProjectionMatrix());
     }
 
-    public void render(float partialTicks, com.mojang.blaze3d.matrix.MatrixStack matrices,
+    public void render(float partialTicks,
             net.minecraft.util.math.vector.Matrix4f projection) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.world == null) {
@@ -296,23 +298,74 @@ public final class InstancedMeshRenderer {
             return;
         }
 
-        // View/projection ride the event (the exact matrices vanilla
-        // renders the world with this frame — uploaded via Matrix4f.write,
-        // never a fixed-function read). write() is absolute-put (SRG
-        // func_195879_b stores 16 floats at indices 0..15 without moving
-        // the position — measured on the pinned client bytes), so rewind,
-        // never flip: flip would collapse the limit to the unmoved
-        // position and both the plan read and the upload would see zero
-        // remaining (found live as IndexOutOfBoundsException, first draw).
+        // True camera view (hub decisions/GPU_INSTANCING.md — root-caused
+        // live 2026-09-12 with an offline replay of a diag frame: the
+        // event MatrixStack top is a leftover rotation (yaw ~180, never
+        // the camera), so a frustum built from it culls every record
+        // while the beasts fall right through the real view). The view
+        // is rebuilt bridge-side from the interpolated eye plus the
+        // render-view yaw/pitch through vanilla's own look-vector
+        // formula (the same formula the server weakspot hook trusts):
+        // no roll in MC, and the event projection demonstrably maps
+        // w=+z (near 0.05 -> NDC -1, far ~768 -> NDC +1 exactly), so
+        // camera space is +Z-forward — row2 carries +forward, never
+        // -forward. Rotation-only (translation-free): the plan tests
+        // camera-relative points and the upload packs eye-relative
+        // instances, so one matrix serves both by SPI convention.
+        // Relative puts advance the position, so flip (never rewind).
+        double lookR = Math.PI / 180.0;
+        double lookF = Math.cos(-view.rotationYaw * lookR - Math.PI);
+        double lookF1 = Math.sin(-view.rotationYaw * lookR - Math.PI);
+        double lookF2 = -Math.cos(-view.rotationPitch * lookR);
+        double lookF3 = Math.sin(-view.rotationPitch * lookR);
+        double fx = lookF1 * lookF2;
+        double fy = lookF3;
+        double fz = lookF * lookF2;
+        double rx = -fz;
+        double rz = fx;
+        double rl = Math.sqrt(rx * rx + rz * rz);
+        if (!(rl > 1.0e-6)) {
+            // Straight up/down (pitch +-90): the yaw-only right keeps a
+            // sane view — never a NaN frustum.
+            double yw = -view.rotationYaw * lookR - Math.PI;
+            rx = Math.cos(yw);
+            rz = -Math.sin(yw);
+            rl = Math.sqrt(rx * rx + rz * rz);
+        }
+        rx /= rl;
+        rz /= rl;
+        double ux = -rz * fy;
+        double uy = rz * fx - rx * fz;
+        double uz = rx * fy;
         viewMatrixBuffer.clear();
-        matrices.getLast().getMatrix().write(viewMatrixBuffer);
-        viewMatrixBuffer.rewind();
+        viewMatrixBuffer.put((float) rx);
+        viewMatrixBuffer.put(0.0f);
+        viewMatrixBuffer.put((float) rz);
+        viewMatrixBuffer.put(0.0f);
+        viewMatrixBuffer.put((float) ux);
+        viewMatrixBuffer.put((float) uy);
+        viewMatrixBuffer.put((float) uz);
+        viewMatrixBuffer.put(0.0f);
+        viewMatrixBuffer.put((float) fx);
+        viewMatrixBuffer.put((float) fy);
+        viewMatrixBuffer.put((float) fz);
+        viewMatrixBuffer.put(0.0f);
+        viewMatrixBuffer.put(0.0f);
+        viewMatrixBuffer.put(0.0f);
+        viewMatrixBuffer.put(0.0f);
+        viewMatrixBuffer.put(1.0f);
+        viewMatrixBuffer.flip();
+        // The projection rides the event (uploaded via Matrix4f.write,
+        // never a fixed-function read — no glGetFloat on blaze3d).
+        // write() lands 16 floats GL column-major; rewind resets the
+        // position for the absolute plan read and the relative uniform
+        // upload below.
         projMatrixBuffer.clear();
         projection.write(projMatrixBuffer);
         projMatrixBuffer.rewind();
-        // The write() buffers land GL column-major, exactly as the
-        // uniform upload below consumes them — feed them column-major
-        // into the single row-major product the plan consumes.
+        // Both buffers land GL column-major, exactly as the uniform
+        // upload below consumes them — feed them column-major into the
+        // single row-major product the plan consumes.
         float[] vp = ViewProjection.vpRowMajor(colMajor(viewMatrixBuffer),
                 colMajor(projMatrixBuffer));
         // Loading-transient guard (measured live 2026-09-12: during the

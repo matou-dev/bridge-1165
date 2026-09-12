@@ -217,6 +217,28 @@ public class AutoplayMod {
     static final float SPAWN_HP_BRUTE = 30.0f;
     static final int SPAWN_KILL_TICK = 1000;
     static final int SPAWN_TIMEOUT = 600;
+    /** Visual proof (DEV ONLY, rides a SPAWN=1 run): the headless client
+     * camera never moves (server teleports carry no look packet), so at
+     * SPAWN_PRESENT_TICK the companion walks every living my_beast onto
+     * the presentation pads around the spawn camera — the renderer then
+     * draws a genuinely visible beast (honest frustum, honest GL,
+     * replay-verified offline), and the kill leg still takes the first
+     * living beast at SPAWN_KILL_TICK wherever it stands. The pads sit
+     * ~7 blocks out on flat ground (verified by offline frustum replay
+     * across the observed camera drift); the drop poll follows the kill
+     * wherever it lands, so no spot leaks into an assert. */
+    static final int SPAWN_PRESENT_TICK = 985;
+    /** Presentation pads (DEV ONLY, visual leg): one per cardinal side
+     * of the spawn camera — the client yaw is whatever the fresh world
+     * dealt, so a single pad could sit behind the camera forever. Four
+     * pads at 90 degrees guarantee one inside the frustum for any yaw
+     * (each ~7 blocks out on flat ground, verified by offline frustum
+     * replay). Pad assignment cycles over the living beasts; the drop
+     * poll follows the kill wherever it lands, so no spot leaks into
+     * an assert. */
+    static final double[] SPAWN_PRESENT_X = {8.5, 8.5, 15.5, 1.5};
+    static final double[] SPAWN_PRESENT_Y = {5.0, 5.0, 5.0, 5.0};
+    static final double[] SPAWN_PRESENT_Z = {7.5, 21.5, 14.5, 14.5};
     /** Combat proof (DEV ONLY, rides a SPAWN=1 run): at COMBAT_TICK the
      * companion teleports the joined player beside the first living
      * my_beast, aims at the head bone and strikes through the genuine
@@ -271,6 +293,7 @@ public class AutoplayMod {
     volatile int killX = 0;
     volatile int killY = 0;
     volatile int killZ = 0;
+    volatile boolean presented = false;
     volatile boolean carrierDropped = false;
     volatile boolean spawnFailed = false;
     volatile int carrierTick = -1;
@@ -820,6 +843,8 @@ public class AutoplayMod {
         int brutes = 0;
         MatouEntity firstBeast = null;
         MatouEntity firstBrute = null;
+        java.util.List<MatouEntity> livingBeasts =
+                new java.util.ArrayList<MatouEntity>();
         for (MatouEntity beast : found) {
             // Owner discipline (hub decisions/LOOT.md): inherited vanilla
             // members go through the declaring stub type, never the beast.
@@ -842,6 +867,7 @@ public class AutoplayMod {
                 if (firstBeast == null) {
                     firstBeast = beast;
                 }
+                livingBeasts.add(beast);
             }
         }
         int total = beasts + brutes;
@@ -920,6 +946,22 @@ public class AutoplayMod {
                 }
             }
         }
+        if (!presented && beastSeen
+                && worldTicks >= SPAWN_PRESENT_TICK) {
+            if (!livingBeasts.isEmpty()) {
+                int pad = 0;
+                for (MatouEntity beast : livingBeasts) {
+                    spawnPresent(beast, pad);
+                    pad++;
+                }
+            } else {
+                System.out.println("[MatouAutoplay] note visual-proof : "
+                        + "no living my_beast to present at worldTick "
+                        + worldTicks + " (kill leg still owns tick "
+                        + SPAWN_KILL_TICK + ")");
+            }
+            presented = true;
+        }
         if (!beastKilled && beastSeen
                 && worldTicks >= SPAWN_KILL_TICK) {
             if (firstBeast != null) {
@@ -942,6 +984,21 @@ public class AutoplayMod {
             spawnFail("timeout (no carrier " + SPAWN_TIMEOUT
                     + " ticks after kill at worldTick " + killTick + ")");
         }
+    }
+
+    private void spawnPresent(MatouEntity beast, int pad) {
+        // Owner discipline (hub decisions/LOOT.md): inherited vanilla
+        // members go through the declaring stub type, never the beast
+        // (setPositionAndRotation is already narrow-pinned by the spawn
+        // tranche — no new notch surface for the visual leg).
+        int slot = pad % SPAWN_PRESENT_X.length;
+        Entity body = beast;
+        body.setPositionAndRotation(SPAWN_PRESENT_X[slot],
+                SPAWN_PRESENT_Y[slot], SPAWN_PRESENT_Z[slot], 0.0f, 0.0f);
+        System.out.println("[MatouAutoplay] spawn beast presented <"
+                + SPAWN_PRESENT_X[slot] + "," + SPAWN_PRESENT_Y[slot] + ","
+                + SPAWN_PRESENT_Z[slot] + ":" + beast.mobOrFirst() + "> at "
+                + "worldTick " + worldTicks);
     }
 
     private void spawnKill(MatouEntity beast) {
